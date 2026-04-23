@@ -40,11 +40,11 @@ export class DbClient {
     return new DeleteBuilder().from(table);
   }
 
-  /** Run a SELECT; returns result rows (driver-specific row shape). */
-  async fetch(builder: SelectBuilder): Promise<Row[]> {
+  /** Run a SELECT; returns result rows typed as T (defaults to Row). */
+  async fetch<T extends Row = Row>(builder: SelectBuilder): Promise<T[]> {
     const ast = builder.toAst();
     const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return this.driver.query<Row>(sql, params);
+    return this.driver.query<T>(sql, params);
   }
 
   async execute(

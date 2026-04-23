@@ -17,7 +17,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:all": "npm test && npm run test:integration",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "engines": {
     "node": ">=18"
@@ -29,7 +34,8 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.0.0"
   },
   "license": "MIT"
 }
