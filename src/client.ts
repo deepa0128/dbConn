@@ -2,7 +2,7 @@ import type { DbConnConfig } from './config.js';
 import { compileQuery } from './dialect/compileQuery.js';
 import { createDriver } from './driver/factory.js';
 import { parseConnectionUrl } from './parseUrl.js';
-import type { HealthStatus, SqlDriver } from './driver/types.js';
+import type { HealthStatus, PoolMetrics, SqlDriver } from './driver/types.js';
 import { DeleteBuilder } from './builder/delete.js';
 import { InsertBuilder } from './builder/insert.js';
 import { SelectBuilder } from './builder/select.js';
@@ -130,6 +130,11 @@ export class DbClient {
   /** Ping the database and return latency + health status. */
   async healthCheck(): Promise<HealthStatus> {
     return this.driver.healthCheck();
+  }
+
+  /** Return current connection pool stats (total, idle, waiting). */
+  poolMetrics(): PoolMetrics {
+    return this.driver.poolMetrics();
   }
 
   async close(): Promise<void> {

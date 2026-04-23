@@ -1,7 +1,7 @@
 import pg from 'pg';
 import type { PostgresConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
-import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
+import type { DriverRow, HealthStatus, PoolMetrics, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
 
 // PostgreSQL SQLSTATE codes
@@ -141,6 +141,14 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
       } finally {
         client.release();
       }
+    },
+
+    poolMetrics(): PoolMetrics {
+      return {
+        totalConnections: pool.totalCount,
+        idleConnections: pool.idleCount,
+        waitingRequests: pool.waitingCount,
+      };
     },
 
     async healthCheck(): Promise<HealthStatus> {

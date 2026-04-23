@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import type { ResultSetHeader } from 'mysql2/promise';
 import type { MysqlConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
-import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
+import type { DriverRow, HealthStatus, PoolMetrics, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
 
 const CONSTRAINT_CODES = new Set([
@@ -173,6 +173,20 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
       } finally {
         conn.release();
       }
+    },
+
+    poolMetrics(): PoolMetrics {
+      // mysql2 pool exposes _allConnections, _freeConnections, _connectionQueue
+      const p = pool as unknown as {
+        _allConnections: { length: number };
+        _freeConnections: { length: number };
+        _connectionQueue: { length: number };
+      };
+      return {
+        totalConnections: p._allConnections?.length ?? 0,
+        idleConnections: p._freeConnections?.length ?? 0,
+        waitingRequests: p._connectionQueue?.length ?? 0,
+      };
     },
 
     async healthCheck(): Promise<HealthStatus> {
