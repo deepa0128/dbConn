@@ -489,3 +489,81 @@ describe('compileQuery › DELETE', () => {
     });
   });
 });
+
+// ─── GROUP BY / AGGREGATES ─────────────────────────────────────────────────
+
+describe('compileQuery › GROUP BY and aggregates', () => {
+  const base: SelectAst = { type: 'select', from: 'orders', columns: '*' };
+
+  it('COUNT(*) aggregate without alias', () => {
+    const ast: SelectAst = { ...base, aggregates: [{ fn: 'count', column: '*' }] };
+    expect(compileQuery(ast, 'postgres').sql).toBe('SELECT COUNT(*) FROM "orders"');
+  });
+
+  it('SUM aggregate with alias', () => {
+    const ast: SelectAst = {
+      ...base,
+      columns: ['status'],
+      aggregates: [{ fn: 'sum', column: 'amount', alias: 'total' }],
+    };
+    expect(compileQuery(ast, 'postgres').sql).toBe(
+      'SELECT "status", SUM("amount") AS "total" FROM "orders"',
+    );
+  });
+
+  it('GROUP BY single column', () => {
+    const ast: SelectAst = { ...base, groupBy: ['status'] };
+    expect(compileQuery(ast, 'postgres').sql).toBe(
+      'SELECT * FROM "orders" GROUP BY "status"',
+    );
+  });
+
+  it('GROUP BY multiple columns', () => {
+    const ast: SelectAst = { ...base, groupBy: ['status', 'region'] };
+    expect(compileQuery(ast, 'postgres').sql).toBe(
+      'SELECT * FROM "orders" GROUP BY "status", "region"',
+    );
+  });
+
+  it('GROUP BY with HAVING', () => {
+    const ast: SelectAst = {
+      ...base,
+      columns: ['status'],
+      aggregates: [{ fn: 'count', column: '*', alias: 'n' }],
+      groupBy: ['status'],
+      having: { type: 'gt', column: 'n', value: 5 },
+    };
+    const { sql, params } = compileQuery(ast, 'postgres');
+    expect(sql).toBe(
+      'SELECT "status", COUNT(*) AS "n" FROM "orders" GROUP BY "status" HAVING "n" > $1',
+    );
+    expect(params).toEqual([5]);
+  });
+
+  it('WHERE before GROUP BY, HAVING after', () => {
+    const ast: SelectAst = {
+      ...base,
+      columns: ['region'],
+      aggregates: [{ fn: 'sum', column: 'amount', alias: 'rev' }],
+      where: { type: 'eq', column: 'active', value: true },
+      groupBy: ['region'],
+      having: { type: 'gte', column: 'rev', value: 100 },
+    };
+    const { sql, params } = compileQuery(ast, 'postgres');
+    expect(sql).toBe(
+      'SELECT "region", SUM("amount") AS "rev" FROM "orders" WHERE "active" = $1 GROUP BY "region" HAVING "rev" >= $2',
+    );
+    expect(params).toEqual([true, 100]);
+  });
+
+  it('aggregates work with mysql quoting', () => {
+    const ast: SelectAst = {
+      ...base,
+      aggregates: [{ fn: 'max', column: 'price', alias: 'max_price' }],
+      groupBy: ['category'],
+    };
+    expect(compileQuery(ast, 'mysql').sql).toBe(
+      'SELECT MAX(`price`) AS `max_price` FROM `orders` GROUP BY `category`',
+    );
+  });
+});

@@ -20,11 +20,20 @@ export type Expr =
   | { type: 'isNull'; column: string }
   | { type: 'isNotNull'; column: string };
 
+export type AggregateColumn = {
+  fn: 'count' | 'sum' | 'avg' | 'min' | 'max';
+  column: string | '*';
+  alias?: string;
+};
+
 export type SelectAst = {
   type: 'select';
   from: string;
   columns: string[] | '*';
+  aggregates?: AggregateColumn[];
   where?: Expr;
+  groupBy?: string[];
+  having?: Expr;
   orderBy?: { column: string; direction: OrderDirection }[];
   limit?: number;
   offset?: number;

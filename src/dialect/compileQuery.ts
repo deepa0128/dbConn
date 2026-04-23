@@ -17,16 +17,31 @@ function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
   const q = quote(style);
   assertSafeIdentifier(ast.from, 'table');
 
-  const cols =
+  const regularCols =
     ast.columns === '*'
-      ? '*'
-      : ast.columns.map((c) => q(c)).join(', ');
+      ? (ast.aggregates?.length ? [] : ['*'])
+      : ast.columns.map((c) => q(c));
 
-  let sql = `SELECT ${cols} FROM ${q(ast.from)}`;
+  const aggCols = (ast.aggregates ?? []).map(({ fn, column, alias }) => {
+    const col = column === '*' ? '*' : q(column);
+    const expr = `${fn.toUpperCase()}(${col})`;
+    return alias ? `${expr} AS ${q(alias)}` : expr;
+  });
+
+  const colList = [...regularCols, ...aggCols].join(', ') || '*';
+  let sql = `SELECT ${colList} FROM ${q(ast.from)}`;
 
   if (ast.where) {
-    const w = compileExpr(ast.where, style, params, q);
-    sql += ` WHERE ${w}`;
+    sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
+  }
+
+  if (ast.groupBy?.length) {
+    for (const c of ast.groupBy) assertSafeIdentifier(c, 'column');
+    sql += ` GROUP BY ${ast.groupBy.map(q).join(', ')}`;
+  }
+
+  if (ast.having) {
+    sql += ` HAVING ${compileExpr(ast.having, style, params, q)}`;
   }
 
   if (ast.orderBy?.length) {

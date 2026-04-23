@@ -32,4 +32,4 @@ export { parseConnectionUrl } from './parseUrl.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
 
-export type { Expr, OrderDirection } from './ast.js';
+export type { AggregateColumn, Expr, OrderDirection } from './ast.js';
