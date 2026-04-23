@@ -490,6 +490,35 @@ describe('compileQuery › DELETE', () => {
   });
 });
 
+// ─── DISTINCT / ALIASES ───────────────────────────────────────────────────
+
+describe('compileQuery › DISTINCT and aliases', () => {
+  it('SELECT DISTINCT', () => {
+    const ast: SelectAst = { type: 'select', from: 'users', columns: ['email'], distinct: true };
+    expect(compileQuery(ast, 'postgres').sql).toBe('SELECT DISTINCT "email" FROM "users"');
+  });
+
+  it('FROM alias', () => {
+    const ast: SelectAst = { type: 'select', from: 'users', fromAlias: 'u', columns: '*' };
+    expect(compileQuery(ast, 'postgres').sql).toBe('SELECT * FROM "users" AS "u"');
+  });
+
+  it('JOIN alias', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'orders',
+      columns: '*',
+      joins: [{ type: 'inner', table: 'users', alias: 'u', on: { type: 'eq', column: 'orders.user_id', value: 1 } }],
+    };
+    expect(compileQuery(ast, 'postgres').sql).toContain('INNER JOIN "users" AS "u"');
+  });
+
+  it('DISTINCT with mysql backtick quoting', () => {
+    const ast: SelectAst = { type: 'select', from: 'users', columns: ['email'], distinct: true };
+    expect(compileQuery(ast, 'mysql').sql).toBe('SELECT DISTINCT `email` FROM `users`');
+  });
+});
+
 // ─── JOINS ─────────────────────────────────────────────────────────────────
 
 describe('compileQuery › JOINs', () => {

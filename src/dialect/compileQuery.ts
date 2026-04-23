@@ -32,8 +32,12 @@ function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
     return alias ? `${expr} AS ${q(alias)}` : expr;
   });
 
+  const distinct = ast.distinct ? 'DISTINCT ' : '';
   const colList = [...regularCols, ...aggCols].join(', ') || '*';
-  let sql = `SELECT ${colList} FROM ${q(ast.from)}`;
+  const fromRef = ast.fromAlias
+    ? `${q(ast.from)} AS ${q(ast.fromAlias)}`
+    : q(ast.from);
+  let sql = `SELECT ${distinct}${colList} FROM ${fromRef}`;
 
   if (ast.joins?.length) {
     const JOIN_KEYWORDS: Record<string, string> = {
@@ -45,8 +49,9 @@ function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
     for (const join of ast.joins) {
       assertSafeIdentifier(join.table, 'join table');
       const keyword = JOIN_KEYWORDS[join.type]!;
+      const tableRef = join.alias ? `${q(join.table)} AS ${q(join.alias)}` : q(join.table);
       const on = compileExpr(join.on, style, params, q);
-      sql += ` ${keyword} ${q(join.table)} ON ${on}`;
+      sql += ` ${keyword} ${tableRef} ON ${on}`;
     }
   }
 

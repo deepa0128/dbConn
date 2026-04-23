@@ -31,12 +31,15 @@ export type JoinType = 'inner' | 'left' | 'right' | 'full';
 export type JoinClause = {
   type: JoinType;
   table: string;
+  alias?: string;
   on: Expr;
 };
 
 export type SelectAst = {
   type: 'select';
   from: string;
+  fromAlias?: string;
+  distinct?: boolean;
   columns: string[] | '*';
   aggregates?: AggregateColumn[];
   joins?: JoinClause[];

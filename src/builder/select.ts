@@ -3,6 +3,8 @@ import { assertSafeIdentifier, assertSafeQualifiedIdentifier } from '../identifi
 
 export class SelectBuilder {
   private table: string | undefined;
+  private tableAlias: string | undefined;
+  private isDistinct = false;
   private projection: string[] | '*' = '*';
   private aggregateList: AggregateColumn[] = [];
   private joinList: JoinClause[] = [];
@@ -13,9 +15,16 @@ export class SelectBuilder {
   private limitN: number | undefined;
   private offsetN: number | undefined;
 
-  from(table: string): this {
+  from(table: string, alias?: string): this {
     assertSafeIdentifier(table, 'table');
+    if (alias !== undefined) assertSafeIdentifier(alias, 'alias');
     this.table = table;
+    this.tableAlias = alias;
+    return this;
+  }
+
+  distinct(): this {
+    this.isDistinct = true;
     return this;
   }
 
@@ -29,18 +38,19 @@ export class SelectBuilder {
     return this;
   }
 
-  join(table: string, on: Expr, type: JoinType = 'inner'): this {
+  join(table: string, on: Expr, type: JoinType = 'inner', alias?: string): this {
     assertSafeIdentifier(table, 'join table');
-    this.joinList.push({ type, table, on });
+    if (alias !== undefined) assertSafeIdentifier(alias, 'join alias');
+    this.joinList.push({ type, table, alias, on });
     return this;
   }
 
-  leftJoin(table: string, on: Expr): this {
-    return this.join(table, on, 'left');
+  leftJoin(table: string, on: Expr, alias?: string): this {
+    return this.join(table, on, 'left', alias);
   }
 
-  rightJoin(table: string, on: Expr): this {
-    return this.join(table, on, 'right');
+  rightJoin(table: string, on: Expr, alias?: string): this {
+    return this.join(table, on, 'right', alias);
   }
 
   aggregate(fn: AggregateColumn['fn'], column: string | '*', alias?: string): this {
@@ -92,6 +102,8 @@ export class SelectBuilder {
     return {
       type: 'select',
       from: this.table,
+      fromAlias: this.tableAlias,
+      distinct: this.isDistinct || undefined,
       columns: this.projection,
       aggregates: this.aggregateList.length ? this.aggregateList : undefined,
       joins: this.joinList.length ? this.joinList : undefined,
