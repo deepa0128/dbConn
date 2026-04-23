@@ -95,6 +95,8 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
     }
   }
 
+  let savepointCounter = 0;
+
   function makeTxDriver(conn: mysql.PoolConnection): SqlDriver {
     return {
       dialect: 'mysql',
@@ -117,8 +119,18 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
         }
       },
 
-      transaction(): Promise<never> {
-        throw new DbError('Nested transactions are not supported');
+      async transaction<T>(fn: (tx: SqlDriver) => Promise<T>): Promise<T> {
+        const sp = `sp_${++savepointCounter}`;
+        await conn.execute(`SAVEPOINT ${sp}`);
+        try {
+          const out = await fn(makeTxDriver(conn));
+          await conn.execute(`RELEASE SAVEPOINT ${sp}`);
+          return out;
+        } catch (e) {
+          await conn.execute(`ROLLBACK TO SAVEPOINT ${sp}`).catch(() => {});
+          if (e instanceof DbError) throw e;
+          return normalizeError(e);
+        }
       },
 
       close: () => Promise.resolve(),

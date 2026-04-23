@@ -65,6 +65,8 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     }
   }
 
+  let savepointCounter = 0;
+
   function makeTxDriver(client: pg.PoolClient): SqlDriver {
     return {
       dialect: 'postgres',
@@ -93,8 +95,18 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         }
       },
 
-      transaction(): Promise<never> {
-        throw new DbError('Nested transactions are not supported');
+      async transaction<T>(fn: (tx: SqlDriver) => Promise<T>): Promise<T> {
+        const sp = `sp_${++savepointCounter}`;
+        await client.query(`SAVEPOINT ${sp}`);
+        try {
+          const out = await fn(makeTxDriver(client));
+          await client.query(`RELEASE SAVEPOINT ${sp}`);
+          return out;
+        } catch (e) {
+          await client.query(`ROLLBACK TO SAVEPOINT ${sp}`).catch(() => {});
+          if (e instanceof DbError) throw e;
+          return normalizeError(e);
+        }
       },
 
       close: () => Promise.resolve(),
