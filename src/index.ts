@@ -35,5 +35,6 @@ export { migrateDown, migrateUp } from './migrate.js';
 export type { Migration } from './migrate.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
+export type { HealthStatus } from './driver/types.js';
 
 export type { AggregateColumn, Expr, JoinClause, JoinType, OrderDirection } from './ast.js';

@@ -1,7 +1,7 @@
 import pg from 'pg';
 import type { PostgresConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
-import type { DriverRow, SqlDriver } from './types.js';
+import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
 
 // PostgreSQL SQLSTATE codes
 const CONSTRAINT_CODES = new Set(['23000', '23502', '23503', '23505', '23514']);
@@ -139,6 +139,20 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         return normalizeError(e);
       } finally {
         client.release();
+      }
+    },
+
+    async healthCheck(): Promise<HealthStatus> {
+      const start = Date.now();
+      try {
+        await pool.query('SELECT 1');
+        return { healthy: true, latencyMs: Date.now() - start };
+      } catch (err) {
+        return {
+          healthy: false,
+          latencyMs: Date.now() - start,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
     },
 

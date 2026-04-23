@@ -2,7 +2,7 @@ import type { DbConnConfig } from './config.js';
 import { compileQuery } from './dialect/compileQuery.js';
 import { createDriver } from './driver/factory.js';
 import { parseConnectionUrl } from './parseUrl.js';
-import type { SqlDriver } from './driver/types.js';
+import type { HealthStatus, SqlDriver } from './driver/types.js';
 import { DeleteBuilder } from './builder/delete.js';
 import { InsertBuilder } from './builder/insert.js';
 import { SelectBuilder } from './builder/select.js';
@@ -109,6 +109,11 @@ export class DbClient {
   /** Execute a raw SQL query and return rows typed as T. Use with care — no SQL injection protection. */
   async sql<T extends Row = Row>(rawSql: string, params: unknown[] = []): Promise<T[]> {
     return this.driver.query<T>(rawSql, params);
+  }
+
+  /** Ping the database and return latency + health status. */
+  async healthCheck(): Promise<HealthStatus> {
+    return this.driver.healthCheck();
   }
 
   async close(): Promise<void> {

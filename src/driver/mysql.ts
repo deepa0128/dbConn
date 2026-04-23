@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import type { ResultSetHeader } from 'mysql2/promise';
 import type { MysqlConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
-import type { DriverRow, SqlDriver } from './types.js';
+import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
 
 const CONSTRAINT_CODES = new Set([
   'ER_DUP_ENTRY',
@@ -171,6 +171,20 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
         return normalizeError(e);
       } finally {
         conn.release();
+      }
+    },
+
+    async healthCheck(): Promise<HealthStatus> {
+      const start = Date.now();
+      try {
+        await pool.execute('SELECT 1');
+        return { healthy: true, latencyMs: Date.now() - start };
+      } catch (err) {
+        return {
+          healthy: false,
+          latencyMs: Date.now() - start,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
     },
 
