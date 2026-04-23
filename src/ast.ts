@@ -12,6 +12,11 @@ export type Expr =
   | { type: 'and'; items: Expr[] }
   | { type: 'or'; items: Expr[] }
   | { type: 'in'; column: string; values: unknown[] }
+  | { type: 'notIn'; column: string; values: unknown[] }
+  | { type: 'like'; column: string; pattern: string }
+  | { type: 'notLike'; column: string; pattern: string }
+  | { type: 'ilike'; column: string; pattern: string }
+  | { type: 'between'; column: string; low: unknown; high: unknown }
   | { type: 'isNull'; column: string }
   | { type: 'isNotNull'; column: string };
 

@@ -44,11 +44,34 @@ function compileExprInner(
       if (expr.values.length === 0) {
         throw new RangeError('IN list must not be empty');
       }
-      const parts = expr.values.map((v) => {
-        const i = params.add(v);
-        return ph(style, i);
-      });
+      const parts = expr.values.map((v) => ph(style, params.add(v)));
       return `${colFragment(expr.column, quoteId)} IN (${parts.join(', ')})`;
+    }
+    case 'notIn': {
+      if (expr.values.length === 0) {
+        throw new RangeError('NOT IN list must not be empty');
+      }
+      const parts = expr.values.map((v) => ph(style, params.add(v)));
+      return `${colFragment(expr.column, quoteId)} NOT IN (${parts.join(', ')})`;
+    }
+    case 'like': {
+      const i = params.add(expr.pattern);
+      return `${colFragment(expr.column, quoteId)} LIKE ${ph(style, i)}`;
+    }
+    case 'notLike': {
+      const i = params.add(expr.pattern);
+      return `${colFragment(expr.column, quoteId)} NOT LIKE ${ph(style, i)}`;
+    }
+    case 'ilike': {
+      const i = params.add(expr.pattern);
+      // MySQL LIKE is case-insensitive by default; ILIKE is Postgres-specific
+      const op = style === 'postgres' ? 'ILIKE' : 'LIKE';
+      return `${colFragment(expr.column, quoteId)} ${op} ${ph(style, i)}`;
+    }
+    case 'between': {
+      const lo = params.add(expr.low);
+      const hi = params.add(expr.high);
+      return `${colFragment(expr.column, quoteId)} BETWEEN ${ph(style, lo)} AND ${ph(style, hi)}`;
     }
     case 'isNull':
       return `${colFragment(expr.column, quoteId)} IS NULL`;

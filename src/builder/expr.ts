@@ -36,6 +36,27 @@ export function inList(column: string, values: unknown[]): Expr {
   return { type: 'in', column, values };
 }
 
+export function notInList(column: string, values: unknown[]): Expr {
+  return { type: 'notIn', column, values };
+}
+
+export function like(column: string, pattern: string): Expr {
+  return { type: 'like', column, pattern };
+}
+
+export function notLike(column: string, pattern: string): Expr {
+  return { type: 'notLike', column, pattern };
+}
+
+/** Case-insensitive LIKE. Compiles to ILIKE on Postgres; plain LIKE on MySQL (case-insensitive by default). */
+export function ilike(column: string, pattern: string): Expr {
+  return { type: 'ilike', column, pattern };
+}
+
+export function between(column: string, low: unknown, high: unknown): Expr {
+  return { type: 'between', column, low, high };
+}
+
 export function isNull(column: string): Expr {
   return { type: 'isNull', column };
 }

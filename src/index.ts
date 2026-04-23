@@ -10,15 +10,20 @@ export { UpdateBuilder } from './builder/update.js';
 
 export {
   and,
+  between,
   eq,
   gt,
   gte,
+  ilike,
   inList,
   isNotNull,
   isNull,
+  like,
   lt,
   lte,
   ne,
+  notInList,
+  notLike,
   or,
 } from './builder/expr.js';
 

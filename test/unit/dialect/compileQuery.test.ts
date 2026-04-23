@@ -202,6 +202,63 @@ describe('compileQuery › expressions', () => {
     const { params } = compileQuery({ type: 'select', from: 'x', columns: '*', where }, 'postgres');
     expect(params).toEqual(['a', 'b', 10]);
   });
+
+  it('notIn compiles to NOT IN', () => {
+    const { sql, params } = compileQuery(
+      sel({ type: 'notIn', column: 'status', values: ['a', 'b'] }),
+      'postgres',
+    );
+    expect(sql).toContain('"status" NOT IN ($1, $2)');
+    expect(params).toEqual(['a', 'b']);
+  });
+
+  it('notIn throws for empty list', () => {
+    expect(() =>
+      compileQuery(sel({ type: 'notIn', column: 'x', values: [] }), 'postgres')
+    ).toThrow(RangeError);
+  });
+
+  it('like compiles to LIKE', () => {
+    const { sql, params } = compileQuery(
+      sel({ type: 'like', column: 'name', pattern: '%alice%' }),
+      'postgres',
+    );
+    expect(sql).toContain('"name" LIKE $1');
+    expect(params).toEqual(['%alice%']);
+  });
+
+  it('notLike compiles to NOT LIKE', () => {
+    const { sql } = compileQuery(
+      sel({ type: 'notLike', column: 'name', pattern: 'admin%' }),
+      'postgres',
+    );
+    expect(sql).toContain('"name" NOT LIKE $1');
+  });
+
+  it('ilike compiles to ILIKE on postgres', () => {
+    const { sql } = compileQuery(
+      sel({ type: 'ilike', column: 'email', pattern: '%@EXAMPLE.COM' }),
+      'postgres',
+    );
+    expect(sql).toContain('"email" ILIKE $1');
+  });
+
+  it('ilike compiles to LIKE on mysql', () => {
+    const { sql } = compileQuery(
+      sel({ type: 'ilike', column: 'email', pattern: '%@EXAMPLE.COM' }),
+      'mysql',
+    );
+    expect(sql).toContain('`email` LIKE ?');
+  });
+
+  it('between compiles to BETWEEN ... AND ...', () => {
+    const { sql, params } = compileQuery(
+      sel({ type: 'between', column: 'age', low: 18, high: 65 }),
+      'postgres',
+    );
+    expect(sql).toContain('"age" BETWEEN $1 AND $2');
+    expect(params).toEqual([18, 65]);
+  });
 });
 
 // ─── INSERT ────────────────────────────────────────────────────────────────

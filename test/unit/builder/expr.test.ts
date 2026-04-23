@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   and,
+  between,
   eq,
   gt,
   gte,
+  ilike,
   inList,
   isNotNull,
   isNull,
+  like,
   lt,
   lte,
   ne,
+  notInList,
+  notLike,
   or,
 } from '../../../src/builder/expr.js';
 
@@ -47,6 +52,26 @@ describe('expression helpers', () => {
 
   it('or with no expressions', () => {
     expect(or()).toEqual({ type: 'or', items: [] });
+  });
+
+  it('notInList', () => {
+    expect(notInList('status', ['a', 'b'])).toEqual({ type: 'notIn', column: 'status', values: ['a', 'b'] });
+  });
+
+  it('like', () => {
+    expect(like('name', '%alice%')).toEqual({ type: 'like', column: 'name', pattern: '%alice%' });
+  });
+
+  it('notLike', () => {
+    expect(notLike('name', 'admin%')).toEqual({ type: 'notLike', column: 'name', pattern: 'admin%' });
+  });
+
+  it('ilike', () => {
+    expect(ilike('email', '%@example.com')).toEqual({ type: 'ilike', column: 'email', pattern: '%@example.com' });
+  });
+
+  it('between', () => {
+    expect(between('age', 18, 65)).toEqual({ type: 'between', column: 'age', low: 18, high: 65 });
   });
 
   it('nested and inside or', () => {
