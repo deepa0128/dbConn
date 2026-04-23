@@ -50,10 +50,13 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     sql: string,
     params: unknown[],
   ): Promise<{ rows: T[]; rowCount: number }> {
+    const start = Date.now();
     try {
       const result = await pool.query<T>(sql, params);
+      config.onQuery?.({ sql, params, durationMs: Date.now() - start });
       return { rows: result.rows, rowCount: result.rowCount ?? 0 };
     } catch (err) {
+      config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
       return normalizeError(err);
     }
   }
@@ -63,19 +66,25 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
       dialect: 'postgres',
 
       async query<T extends DriverRow = DriverRow>(sql: string, params: unknown[]): Promise<T[]> {
+        const start = Date.now();
         try {
           const r = await client.query<T>(sql, params);
+          config.onQuery?.({ sql, params, durationMs: Date.now() - start });
           return r.rows;
         } catch (err) {
+          config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
           return normalizeError(err);
         }
       },
 
       async execute(sql: string, params: unknown[]): Promise<{ affectedRows: number }> {
+        const start = Date.now();
         try {
           const r = await client.query(sql, params);
+          config.onQuery?.({ sql, params, durationMs: Date.now() - start });
           return { affectedRows: r.rowCount ?? 0 };
         } catch (err) {
+          config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
           return normalizeError(err);
         }
       },

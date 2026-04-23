@@ -64,17 +64,31 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
   // mysql2 accepts { sql, values, timeout } to trigger a server-side KILL QUERY
   // after `timeout` ms. When no timeout is set, use the plain (sql, values) form.
   async function runPool(sql: string, params: unknown[]) {
-    if (config.queryTimeoutMs !== undefined) {
-      return pool.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs });
+    const start = Date.now();
+    try {
+      const result = config.queryTimeoutMs !== undefined
+        ? await pool.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs })
+        : await pool.execute(sql, params as never[]);
+      config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+      return result;
+    } catch (err) {
+      config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+      throw err;
     }
-    return pool.execute(sql, params as never[]);
   }
 
   async function runConn(conn: mysql.PoolConnection, sql: string, params: unknown[]) {
-    if (config.queryTimeoutMs !== undefined) {
-      return conn.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs });
+    const start = Date.now();
+    try {
+      const result = config.queryTimeoutMs !== undefined
+        ? await conn.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs })
+        : await conn.execute(sql, params as never[]);
+      config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+      return result;
+    } catch (err) {
+      config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+      throw err;
     }
-    return conn.execute(sql, params as never[]);
   }
 
   function makeTxDriver(conn: mysql.PoolConnection): SqlDriver {

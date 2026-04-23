@@ -1,5 +1,12 @@
 export type DatabaseDialect = 'postgres' | 'mysql';
 
+export type QueryEvent = {
+  readonly sql: string;
+  readonly params: readonly unknown[];
+  readonly durationMs: number;
+  readonly error?: unknown;
+};
+
 export type PostgresConfig = {
   dialect: 'postgres';
   host: string;
@@ -11,6 +18,8 @@ export type PostgresConfig = {
   maxConnections?: number;
   /** Milliseconds before a query is cancelled server-side via statement_timeout. */
   queryTimeoutMs?: number;
+  /** Called after every query with timing and optional error information. */
+  onQuery?: (event: QueryEvent) => void;
 };
 
 export type MysqlConfig = {
@@ -27,6 +36,8 @@ export type MysqlConfig = {
    * Applies to individual SELECT / DML statements via mysql2's built-in timeout mechanism.
    */
   queryTimeoutMs?: number;
+  /** Called after every query with timing and optional error information. */
+  onQuery?: (event: QueryEvent) => void;
 };
 
 export type DbConnConfig = PostgresConfig | MysqlConfig;
