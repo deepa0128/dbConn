@@ -1,6 +1,34 @@
 import pg from 'pg';
 import type { PostgresConfig } from '../config.js';
+import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
 import type { DriverRow, SqlDriver } from './types.js';
+
+// PostgreSQL SQLSTATE codes
+const CONSTRAINT_CODES = new Set(['23000', '23502', '23503', '23505', '23514']);
+const TIMEOUT_CODES = new Set(['57014', '57P01']);
+const CONNECTION_CODES = new Set([
+  '08001', '08004', '08006', '28000', '28P01', '3D000',
+  'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EPIPE',
+]);
+
+function normalizeError(err: unknown): never {
+  if (err instanceof DbError) throw err;
+  if (err !== null && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    const code = String(e['code'] ?? '');
+    const message = String(e['message'] ?? 'unknown database error');
+    if (CONSTRAINT_CODES.has(code)) {
+      throw new ConstraintError(message, String(e['constraint'] ?? code), err);
+    }
+    if (TIMEOUT_CODES.has(code)) {
+      throw new QueryTimeoutError(message, err);
+    }
+    if (CONNECTION_CODES.has(code)) {
+      throw new ConnectionError(message, err);
+    }
+  }
+  throw new DbError(err instanceof Error ? err.message : String(err), err);
+}
 
 export function createPostgresDriver(config: PostgresConfig): SqlDriver {
   const pool = new pg.Pool({
@@ -13,13 +41,51 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     max: config.maxConnections ?? 10,
   });
 
-  const run = async <T extends DriverRow>(
+  // Prevent unhandled 'error' events from crashing the process when an idle
+  // client encounters a network failure. The error surfaces on the next query.
+  pool.on('error', (_err: Error) => {});
+
+  async function run<T extends DriverRow>(
     sql: string,
     params: unknown[],
-  ): Promise<{ rows: T[]; rowCount: number }> => {
-    const result = await pool.query<T>(sql, params);
-    return { rows: result.rows, rowCount: result.rowCount ?? 0 };
-  };
+  ): Promise<{ rows: T[]; rowCount: number }> {
+    try {
+      const result = await pool.query<T>(sql, params);
+      return { rows: result.rows, rowCount: result.rowCount ?? 0 };
+    } catch (err) {
+      return normalizeError(err);
+    }
+  }
+
+  function makeTxDriver(client: pg.PoolClient): SqlDriver {
+    return {
+      dialect: 'postgres',
+
+      async query<T extends DriverRow = DriverRow>(sql: string, params: unknown[]): Promise<T[]> {
+        try {
+          const r = await client.query<T>(sql, params);
+          return r.rows;
+        } catch (err) {
+          return normalizeError(err);
+        }
+      },
+
+      async execute(sql: string, params: unknown[]): Promise<{ affectedRows: number }> {
+        try {
+          const r = await client.query(sql, params);
+          return { affectedRows: r.rowCount ?? 0 };
+        } catch (err) {
+          return normalizeError(err);
+        }
+      },
+
+      transaction(): Promise<never> {
+        throw new DbError('Nested transactions are not supported');
+      },
+
+      close: () => Promise.resolve(),
+    };
+  }
 
   return {
     dialect: 'postgres',
@@ -35,28 +101,16 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     },
 
     async transaction<T>(fn: (tx: SqlDriver) => Promise<T>): Promise<T> {
-      const client = await pool.connect();
+      const client = await pool.connect().catch((err) => normalizeError(err));
       try {
         await client.query('BEGIN');
-        const txDriver: SqlDriver = {
-          dialect: 'postgres',
-          query: <T extends DriverRow = DriverRow>(sql: string, params: unknown[]) =>
-            client.query<T>(sql, params).then((r) => r.rows),
-          execute: async (sql, params) => {
-            const r = await client.query(sql, params);
-            return { affectedRows: r.rowCount ?? 0 };
-          },
-          transaction: () => {
-            throw new Error('Nested transactions are not supported');
-          },
-          close: async () => {},
-        };
-        const out = await fn(txDriver);
+        const out = await fn(makeTxDriver(client));
         await client.query('COMMIT');
         return out;
       } catch (e) {
-        await client.query('ROLLBACK');
-        throw e;
+        await client.query('ROLLBACK').catch(() => {});
+        if (e instanceof DbError) throw e;
+        return normalizeError(e);
       } finally {
         client.release();
       }

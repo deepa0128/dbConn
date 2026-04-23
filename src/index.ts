@@ -24,4 +24,6 @@ export {
 
 export { assertSafeIdentifier } from './identifier.js';
 
+export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
+
 export type { Expr, OrderDirection } from './ast.js';
