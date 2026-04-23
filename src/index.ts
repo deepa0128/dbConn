@@ -23,6 +23,7 @@ export {
 } from './builder/expr.js';
 
 export { assertSafeIdentifier } from './identifier.js';
+export { parseConnectionUrl } from './parseUrl.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
 

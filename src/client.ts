@@ -1,6 +1,7 @@
 import type { DbConnConfig } from './config.js';
 import { compileQuery } from './dialect/compileQuery.js';
 import { createDriver } from './driver/factory.js';
+import { parseConnectionUrl } from './parseUrl.js';
 import type { SqlDriver } from './driver/types.js';
 import { DeleteBuilder } from './builder/delete.js';
 import { InsertBuilder } from './builder/insert.js';
@@ -67,6 +68,7 @@ export class DbClient {
   }
 }
 
-export function createClient(config: DbConnConfig): DbClient {
-  return new DbClient(createDriver(config));
+export function createClient(config: DbConnConfig | string): DbClient {
+  const resolved = typeof config === 'string' ? parseConnectionUrl(config) : config;
+  return new DbClient(createDriver(resolved));
 }
