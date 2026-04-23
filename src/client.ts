@@ -1,0 +1,72 @@
+import type { DbConnConfig } from './config.js';
+import { compileQuery } from './dialect/compileQuery.js';
+import { createDriver } from './driver/factory.js';
+import type { SqlDriver } from './driver/types.js';
+import { DeleteBuilder } from './builder/delete.js';
+import { InsertBuilder } from './builder/insert.js';
+import { SelectBuilder } from './builder/select.js';
+import { UpdateBuilder } from './builder/update.js';
+
+export type Row = Record<string, unknown>;
+
+export type ExecuteResult = {
+  affectedRows: number;
+};
+
+export class DbClient {
+  private readonly driver: SqlDriver;
+
+  constructor(driver: SqlDriver) {
+    this.driver = driver;
+  }
+
+  get dialect(): 'postgres' | 'mysql' {
+    return this.driver.dialect;
+  }
+
+  selectFrom(table: string): SelectBuilder {
+    return new SelectBuilder().from(table);
+  }
+
+  insertInto(table: string): InsertBuilder {
+    return new InsertBuilder().into(table);
+  }
+
+  updateTable(table: string): UpdateBuilder {
+    return new UpdateBuilder().tableName(table);
+  }
+
+  deleteFrom(table: string): DeleteBuilder {
+    return new DeleteBuilder().from(table);
+  }
+
+  /** Run a SELECT; returns result rows (driver-specific row shape). */
+  async fetch(builder: SelectBuilder): Promise<Row[]> {
+    const ast = builder.toAst();
+    const { sql, params } = compileQuery(ast, this.driver.dialect);
+    return this.driver.query<Row>(sql, params);
+  }
+
+  async execute(
+    builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
+  ): Promise<ExecuteResult> {
+    const ast = builder.toAst();
+    const { sql, params } = compileQuery(ast, this.driver.dialect);
+    return this.driver.execute(sql, params);
+  }
+
+  async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
+    return this.driver.transaction(async (txDriver) => {
+      const txClient = new DbClient(txDriver);
+      return fn(txClient);
+    });
+  }
+
+  async close(): Promise<void> {
+    await this.driver.close();
+  }
+}
+
+export function createClient(config: DbConnConfig): DbClient {
+  return new DbClient(createDriver(config));
+}
