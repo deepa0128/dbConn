@@ -1,6 +1,6 @@
 {
   "name": "@dbconn/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Universal database connector with dialect-safe query builders (Postgres, MySQL)",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,12 +12,15 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md",
+    "README.md"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
@@ -27,6 +30,18 @@
   "engines": {
     "node": ">=18"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deepa0128/dbConn.git"
+  },
+  "keywords": [
+    "database",
+    "postgres",
+    "mysql",
+    "query-builder",
+    "sql",
+    "typescript"
+  ],
   "dependencies": {
     "mysql2": "^3.11.0",
     "pg": "^8.13.0"
