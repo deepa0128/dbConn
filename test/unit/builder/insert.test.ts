@@ -47,6 +47,26 @@ describe('InsertBuilder', () => {
     ).toThrow(/values/i);
   });
 
+  it('onConflictDoNothing stores the clause in the AST', () => {
+    const ast = new InsertBuilder()
+      .into('users')
+      .columns('email')
+      .values({ email: 'x@y.com' })
+      .onConflictDoNothing(['email'])
+      .toAst();
+    expect(ast.onConflict).toEqual({ action: 'nothing', targets: ['email'] });
+  });
+
+  it('onConflictDoUpdate stores the clause in the AST', () => {
+    const ast = new InsertBuilder()
+      .into('users')
+      .columns('email', 'name')
+      .values({ email: 'x@y.com', name: 'X' })
+      .onConflictDoUpdate(['email'], ['name'])
+      .toAst();
+    expect(ast.onConflict).toEqual({ action: 'update', targets: ['email'], updateColumns: ['name'] });
+  });
+
   it('rejects invalid table name', () => {
     expect(() => new InsertBuilder().into('bad table')).toThrow(TypeError);
   });

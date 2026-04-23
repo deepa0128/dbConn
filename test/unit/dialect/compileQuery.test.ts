@@ -334,6 +334,58 @@ describe('compileQuery › INSERT', () => {
     });
   });
 
+  it('ON CONFLICT DO NOTHING (postgres)', () => {
+    const ast: InsertAst = {
+      type: 'insert',
+      into: 'users',
+      columns: ['email'],
+      rows: [{ email: 'a@b.com' }],
+      onConflict: { action: 'nothing', targets: ['email'] },
+    };
+    expect(compileQuery(ast, 'postgres').sql).toBe(
+      'INSERT INTO "users" ("email") VALUES ($1) ON CONFLICT ("email") DO NOTHING',
+    );
+  });
+
+  it('ON CONFLICT DO UPDATE (postgres)', () => {
+    const ast: InsertAst = {
+      type: 'insert',
+      into: 'users',
+      columns: ['email', 'name'],
+      rows: [{ email: 'a@b.com', name: 'Alice' }],
+      onConflict: { action: 'update', targets: ['email'], updateColumns: ['name'] },
+    };
+    expect(compileQuery(ast, 'postgres').sql).toBe(
+      'INSERT INTO "users" ("email", "name") VALUES ($1, $2) ON CONFLICT ("email") DO UPDATE SET "name" = EXCLUDED."name"',
+    );
+  });
+
+  it('INSERT IGNORE for do-nothing on mysql', () => {
+    const ast: InsertAst = {
+      type: 'insert',
+      into: 'users',
+      columns: ['email'],
+      rows: [{ email: 'a@b.com' }],
+      onConflict: { action: 'nothing' },
+    };
+    expect(compileQuery(ast, 'mysql').sql).toBe(
+      'INSERT IGNORE INTO `users` (`email`) VALUES (?)',
+    );
+  });
+
+  it('ON DUPLICATE KEY UPDATE on mysql', () => {
+    const ast: InsertAst = {
+      type: 'insert',
+      into: 'users',
+      columns: ['email', 'name'],
+      rows: [{ email: 'a@b.com', name: 'Alice' }],
+      onConflict: { action: 'update', targets: ['email'], updateColumns: ['name'] },
+    };
+    expect(compileQuery(ast, 'mysql').sql).toBe(
+      'INSERT INTO `users` (`email`, `name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)',
+    );
+  });
+
   it('throws DbError for RETURNING on mysql', () => {
     const ast: InsertAst = {
       type: 'insert',

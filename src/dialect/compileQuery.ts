@@ -76,7 +76,32 @@ function compileInsert(ast: InsertAst, style: PlaceholderStyle): CompiledSql {
     rowSqls.push(`(${placeholders.join(', ')})`);
   }
 
-  let sql = `INSERT INTO ${q(ast.into)} (${colList}) VALUES ${rowSqls.join(', ')}`;
+  const ignoreKeyword =
+    style === 'mysql' && ast.onConflict?.action === 'nothing' ? ' IGNORE' : '';
+  let sql = `INSERT${ignoreKeyword} INTO ${q(ast.into)} (${colList}) VALUES ${rowSqls.join(', ')}`;
+
+  if (ast.onConflict) {
+    const { action } = ast.onConflict;
+    if (style === 'postgres') {
+      const targets = ast.onConflict.targets;
+      const targetClause = targets?.length ? ` (${targets.map(q).join(', ')})` : '';
+      if (action === 'nothing') {
+        sql += ` ON CONFLICT${targetClause} DO NOTHING`;
+      } else {
+        const setClauses = ast.onConflict.updateColumns
+          .map((c) => `${q(c)} = EXCLUDED.${q(c)}`)
+          .join(', ');
+        sql += ` ON CONFLICT${targetClause} DO UPDATE SET ${setClauses}`;
+      }
+    } else if (style === 'mysql' && action === 'update') {
+      const setClauses = ast.onConflict.updateColumns
+        .map((c) => `${q(c)} = VALUES(${q(c)})`)
+        .join(', ');
+      sql += ` ON DUPLICATE KEY UPDATE ${setClauses}`;
+    }
+    // mysql + action=nothing handled above via INSERT IGNORE
+  }
+
   if (ast.returning) {
     if (style !== 'postgres') throw new DbError('RETURNING is only supported on PostgreSQL');
     sql += ` RETURNING ${ast.returning.map((c) => q(c)).join(', ')}`;

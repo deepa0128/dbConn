@@ -30,11 +30,16 @@ export type SelectAst = {
   offset?: number;
 };
 
+export type ConflictClause =
+  | { action: 'nothing'; targets?: string[] }
+  | { action: 'update'; targets: string[]; updateColumns: string[] };
+
 export type InsertAst = {
   type: 'insert';
   into: string;
   columns: string[];
   rows: Record<string, unknown>[];
+  onConflict?: ConflictClause;
   returning?: string[];
 };
 
