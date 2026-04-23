@@ -61,13 +61,29 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
     connectionLimit: config.maxConnections ?? 10,
   });
 
+  // mysql2 accepts { sql, values, timeout } to trigger a server-side KILL QUERY
+  // after `timeout` ms. When no timeout is set, use the plain (sql, values) form.
+  async function runPool(sql: string, params: unknown[]) {
+    if (config.queryTimeoutMs !== undefined) {
+      return pool.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs });
+    }
+    return pool.execute(sql, params as never[]);
+  }
+
+  async function runConn(conn: mysql.PoolConnection, sql: string, params: unknown[]) {
+    if (config.queryTimeoutMs !== undefined) {
+      return conn.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs });
+    }
+    return conn.execute(sql, params as never[]);
+  }
+
   function makeTxDriver(conn: mysql.PoolConnection): SqlDriver {
     return {
       dialect: 'mysql',
 
       async query<T extends DriverRow = DriverRow>(sql: string, params: unknown[]): Promise<T[]> {
         try {
-          const [rows] = await conn.execute(sql, params as never[]);
+          const [rows] = await runConn(conn, sql, params);
           return rows as T[];
         } catch (err) {
           return normalizeError(err);
@@ -76,7 +92,7 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
 
       async execute(sql: string, params: unknown[]): Promise<{ affectedRows: number }> {
         try {
-          const [res] = await conn.execute(sql, params as never[]);
+          const [res] = await runConn(conn, sql, params);
           return { affectedRows: (res as ResultSetHeader).affectedRows };
         } catch (err) {
           return normalizeError(err);
@@ -96,7 +112,7 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
 
     async query<T extends DriverRow = DriverRow>(sql: string, params: unknown[]): Promise<T[]> {
       try {
-        const [rows] = await pool.execute(sql, params as never[]);
+        const [rows] = await runPool(sql, params);
         return rows as T[];
       } catch (err) {
         return normalizeError(err);
@@ -105,7 +121,7 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
 
     async execute(sql: string, params: unknown[]): Promise<{ affectedRows: number }> {
       try {
-        const [result] = await pool.execute(sql, params as never[]);
+        const [result] = await runPool(sql, params);
         return { affectedRows: (result as ResultSetHeader).affectedRows };
       } catch (err) {
         return normalizeError(err);
