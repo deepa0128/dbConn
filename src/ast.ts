@@ -18,7 +18,8 @@ export type Expr =
   | { type: 'ilike'; column: string; pattern: string }
   | { type: 'between'; column: string; low: unknown; high: unknown }
   | { type: 'isNull'; column: string }
-  | { type: 'isNotNull'; column: string };
+  | { type: 'isNotNull'; column: string }
+  | { type: 'raw'; sql: string; params?: unknown[] };
 
 export type AggregateColumn = {
   fn: 'count' | 'sum' | 'avg' | 'min' | 'max';

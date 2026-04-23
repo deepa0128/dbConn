@@ -25,6 +25,7 @@ export {
   notInList,
   notLike,
   or,
+  rawExpr,
 } from './builder/expr.js';
 
 export { assertSafeIdentifier } from './identifier.js';

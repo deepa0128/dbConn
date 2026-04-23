@@ -64,3 +64,13 @@ export function isNull(column: string): Expr {
 export function isNotNull(column: string): Expr {
   return { type: 'isNotNull', column };
 }
+
+/**
+ * Embed a raw SQL fragment in a WHERE clause. Placeholders can be written
+ * as `?` or `$N` — they are renumbered automatically to fit the surrounding query.
+ *
+ * Use sparingly; this bypasses the identifier-safety layer.
+ */
+export function rawExpr(sql: string, params?: unknown[]): Expr {
+  return { type: 'raw', sql, params };
+}

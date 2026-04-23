@@ -81,6 +81,17 @@ function compileExprInner(
       return `${colFragment(expr.column, quoteId)} IS NULL`;
     case 'isNotNull':
       return `${colFragment(expr.column, quoteId)} IS NOT NULL`;
+    case 'raw': {
+      // Inline raw params into the shared param buffer; rewrite placeholders
+      if (expr.params?.length) {
+        let i = 0;
+        return expr.sql.replace(/\?|\$\d+/g, () => {
+          const idx = params.add(expr.params![i++]);
+          return style === 'postgres' ? `$${idx}` : '?';
+        });
+      }
+      return expr.sql;
+    }
     case 'and': {
       if (expr.items.length === 0) return 'TRUE';
       return expr.items.map((e) => `(${compileExprInner(e, style, params, quoteId)})`).join(' AND ');

@@ -490,6 +490,52 @@ describe('compileQuery › DELETE', () => {
   });
 });
 
+// ─── RAW EXPRESSIONS ──────────────────────────────────────────────────────
+
+describe('compileQuery › raw expressions', () => {
+  function sel(where: SelectAst['where']): SelectAst {
+    return { type: 'select', from: 'x', columns: '*', where };
+  }
+
+  it('raw with no params passes through verbatim', () => {
+    const { sql, params } = compileQuery(sel({ type: 'raw', sql: 'age > EXTRACT(year FROM NOW())' }), 'postgres');
+    expect(sql).toContain('age > EXTRACT(year FROM NOW())');
+    expect(params).toEqual([]);
+  });
+
+  it('raw ? placeholders are renumbered for postgres', () => {
+    const { sql, params } = compileQuery(
+      sel({ type: 'raw', sql: 'score BETWEEN ? AND ?', params: [10, 100] }),
+      'postgres',
+    );
+    expect(sql).toContain('score BETWEEN $1 AND $2');
+    expect(params).toEqual([10, 100]);
+  });
+
+  it('raw ? placeholders stay as ? for mysql', () => {
+    const { sql, params } = compileQuery(
+      sel({ type: 'raw', sql: 'score > ?', params: [5] }),
+      'mysql',
+    );
+    expect(sql).toContain('score > ?');
+    expect(params).toEqual([5]);
+  });
+
+  it('raw params accumulate with surrounding params', () => {
+    const where: SelectAst['where'] = {
+      type: 'and',
+      items: [
+        { type: 'eq', column: 'active', value: true },
+        { type: 'raw', sql: 'age > ?', params: [18] },
+      ],
+    };
+    const { sql, params } = compileQuery({ type: 'select', from: 'users', columns: '*', where }, 'postgres');
+    expect(sql).toContain('"active" = $1');
+    expect(sql).toContain('age > $2');
+    expect(params).toEqual([true, 18]);
+  });
+});
+
 // ─── DISTINCT / ALIASES ───────────────────────────────────────────────────
 
 describe('compileQuery › DISTINCT and aliases', () => {
