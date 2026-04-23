@@ -1,7 +1,7 @@
 export { createClient, DbClient } from './client.js';
 export type { ExecuteResult, Row } from './client.js';
 
-export type { DbConnConfig, DatabaseDialect, MysqlConfig, PostgresConfig, QueryEvent } from './config.js';
+export type { DbConnConfig, DatabaseDialect, MysqlConfig, PostgresConfig, QueryEvent, SslOptions } from './config.js';
 
 export { DeleteBuilder } from './builder/delete.js';
 export { InsertBuilder } from './builder/insert.js';

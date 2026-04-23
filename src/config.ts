@@ -1,5 +1,12 @@
 export type DatabaseDialect = 'postgres' | 'mysql';
 
+export type SslOptions = {
+  ca?: string;
+  cert?: string;
+  key?: string;
+  rejectUnauthorized?: boolean;
+};
+
 export type QueryEvent = {
   readonly sql: string;
   readonly params: readonly unknown[];
@@ -14,7 +21,7 @@ export type PostgresConfig = {
   user: string;
   password: string;
   database: string;
-  ssl?: boolean;
+  ssl?: boolean | SslOptions;
   maxConnections?: number;
   /** Milliseconds before a query is cancelled server-side via statement_timeout. */
   queryTimeoutMs?: number;
@@ -29,7 +36,7 @@ export type MysqlConfig = {
   user: string;
   password: string;
   database: string;
-  ssl?: boolean;
+  ssl?: boolean | SslOptions;
   maxConnections?: number;
   /**
    * Milliseconds before a query is killed server-side via KILL QUERY.

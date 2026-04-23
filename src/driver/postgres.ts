@@ -37,7 +37,11 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     user: config.user,
     password: config.password,
     database: config.database,
-    ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
+    ssl: config.ssl === true
+      ? { rejectUnauthorized: true }
+      : config.ssl === false || config.ssl == null
+        ? undefined
+        : config.ssl,
     max: config.maxConnections ?? 10,
     statement_timeout: config.queryTimeoutMs,
   });

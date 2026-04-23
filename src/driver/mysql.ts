@@ -56,7 +56,11 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
     user: config.user,
     password: config.password,
     database: config.database,
-    ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
+    ssl: config.ssl === true
+      ? { rejectUnauthorized: true }
+      : config.ssl === false || config.ssl == null
+        ? undefined
+        : config.ssl,
     waitForConnections: true,
     connectionLimit: config.maxConnections ?? 10,
   });
