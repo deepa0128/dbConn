@@ -2,6 +2,7 @@ import pg from 'pg';
 import type { PostgresConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
 import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
+import { notifyQuery } from './notify.js';
 
 // PostgreSQL SQLSTATE codes
 const CONSTRAINT_CODES = new Set(['23000', '23502', '23503', '23505', '23514']);
@@ -57,10 +58,10 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     const start = Date.now();
     try {
       const result = await pool.query<T>(sql, params);
-      config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
       return { rows: result.rows, rowCount: result.rowCount ?? 0 };
     } catch (err) {
-      config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
       return normalizeError(err);
     }
   }
@@ -75,10 +76,10 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         const start = Date.now();
         try {
           const r = await client.query<T>(sql, params);
-          config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+          notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
           return r.rows;
         } catch (err) {
-          config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+          notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
           return normalizeError(err);
         }
       },
@@ -87,10 +88,10 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         const start = Date.now();
         try {
           const r = await client.query(sql, params);
-          config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+          notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
           return { affectedRows: r.rowCount ?? 0 };
         } catch (err) {
-          config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+          notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
           return normalizeError(err);
         }
       },

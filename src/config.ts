@@ -25,8 +25,8 @@ export type PostgresConfig = {
   maxConnections?: number;
   /** Milliseconds before a query is cancelled server-side via statement_timeout. */
   queryTimeoutMs?: number;
-  /** Called after every query with timing and optional error information. */
-  onQuery?: (event: QueryEvent) => void;
+  /** Called after every query with timing and optional error information. Accepts one handler or an array. */
+  onQuery?: ((event: QueryEvent) => void) | Array<(event: QueryEvent) => void>;
 };
 
 export type MysqlConfig = {
@@ -43,8 +43,8 @@ export type MysqlConfig = {
    * Applies to individual SELECT / DML statements via mysql2's built-in timeout mechanism.
    */
   queryTimeoutMs?: number;
-  /** Called after every query with timing and optional error information. */
-  onQuery?: (event: QueryEvent) => void;
+  /** Called after every query with timing and optional error information. Accepts one handler or an array. */
+  onQuery?: ((event: QueryEvent) => void) | Array<(event: QueryEvent) => void>;
 };
 
 export type DbConnConfig = PostgresConfig | MysqlConfig;

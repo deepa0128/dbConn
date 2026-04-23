@@ -3,6 +3,7 @@ import type { ResultSetHeader } from 'mysql2/promise';
 import type { MysqlConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
 import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
+import { notifyQuery } from './notify.js';
 
 const CONSTRAINT_CODES = new Set([
   'ER_DUP_ENTRY',
@@ -73,10 +74,10 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
       const result = config.queryTimeoutMs !== undefined
         ? await pool.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs })
         : await pool.execute(sql, params as never[]);
-      config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
       return result;
     } catch (err) {
-      config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
       throw err;
     }
   }
@@ -87,10 +88,10 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
       const result = config.queryTimeoutMs !== undefined
         ? await conn.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs })
         : await conn.execute(sql, params as never[]);
-      config.onQuery?.({ sql, params, durationMs: Date.now() - start });
+      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
       return result;
     } catch (err) {
-      config.onQuery?.({ sql, params, durationMs: Date.now() - start, error: err });
+      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
       throw err;
     }
   }
