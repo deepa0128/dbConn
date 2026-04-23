@@ -1,6 +1,6 @@
 {
   "name": "@dbconn/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Universal database connector with dialect-safe query builders (Postgres, MySQL)",
   "type": "module",
   "main": "./dist/index.js",

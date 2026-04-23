@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-04-23
+
+### Added
+- **JOIN support** — `SelectBuilder.join()`, `.leftJoin()`, `.rightJoin()` with ON expressions; qualified `table.column` references in SELECT list and WHERE
+- **Cursor pagination** — `paginate()` helper for stable keyset pagination, returns `nextCursor` / `hasMore`
+- **Health check** — `DbClient.healthCheck()` pings the pool and returns `{ healthy, latencyMs, error? }`
+- **`count()` shorthand** — `DbClient.count(builder)` returns the matching row count without boilerplate
+- **onQuery chaining** — `onQuery` now accepts a single handler *or* an array for composing multiple observers
+- **`DbClient.sql()`** — escape hatch for raw parameterized queries
+
 ## [0.2.0] - 2026-04-23
 
 ### Added
