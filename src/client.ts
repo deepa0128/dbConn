@@ -14,6 +14,19 @@ export type ExecuteResult = {
   affectedRows: number;
 };
 
+function withSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new DOMException('Query aborted', 'AbortError'));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('Query aborted', 'AbortError'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      (e) => { signal.removeEventListener('abort', onAbort); reject(e); },
+    );
+  });
+}
+
 export class DbClient {
   private readonly driver: SqlDriver;
 
@@ -42,10 +55,10 @@ export class DbClient {
   }
 
   /** Run a SELECT; returns result rows typed as T (defaults to Row). */
-  async fetch<T extends Row = Row>(builder: SelectBuilder): Promise<T[]> {
+  async fetch<T extends Row = Row>(builder: SelectBuilder, signal?: AbortSignal): Promise<T[]> {
     const ast = builder.toAst();
     const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return this.driver.query<T>(sql, params);
+    return withSignal(this.driver.query<T>(sql, params), signal);
   }
 
   /**
@@ -93,10 +106,11 @@ export class DbClient {
 
   async execute(
     builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
+    signal?: AbortSignal,
   ): Promise<ExecuteResult> {
     const ast = builder.toAst();
     const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return this.driver.execute(sql, params);
+    return withSignal(this.driver.execute(sql, params), signal);
   }
 
   /** Return the number of rows matching the builder's WHERE clause. */
@@ -123,8 +137,8 @@ export class DbClient {
   }
 
   /** Execute a raw SQL query and return rows typed as T. Use with care — no SQL injection protection. */
-  async sql<T extends Row = Row>(rawSql: string, params: unknown[] = []): Promise<T[]> {
-    return this.driver.query<T>(rawSql, params);
+  async sql<T extends Row = Row>(rawSql: string, params: unknown[] = [], signal?: AbortSignal): Promise<T[]> {
+    return withSignal(this.driver.query<T>(rawSql, params), signal);
   }
 
   /** Ping the database and return latency + health status. */
