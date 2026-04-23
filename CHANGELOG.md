@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] - 2026-04-23
+
+### Added
+- **DISTINCT** — `SelectBuilder.distinct()` emits `SELECT DISTINCT`
+- **Table & join aliases** — `selectFrom(table, alias)`, `join(table, on, type, alias)`, `leftJoin(..., alias)`
+- **`rawExpr()`** — embed raw SQL fragments inside WHERE/HAVING; placeholders are renumbered automatically
+- **Pool metrics** — `DbClient.poolMetrics()` returns `{ totalConnections, idleConnections, waitingRequests }`
+- **Connection retry** — `maxRetries` / `retryDelayMs` config fields; retries on `ConnectionError` with exponential backoff
+- **Migration CLI** — `npx dbconn migrate up|down --dir ./migrations`; discovers files by name, tracks via `_dbconn_migrations`
+- **AbortSignal** — `fetch()`, `execute()`, `sql()` accept an optional `AbortSignal` for client-side cancellation
+- **Full README** — comprehensive docs covering all features
+
 ## [0.3.0] - 2026-04-23
 
 ### Added
