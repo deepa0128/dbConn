@@ -35,6 +35,7 @@ export type InsertAst = {
   into: string;
   columns: string[];
   rows: Record<string, unknown>[];
+  returning?: string[];
 };
 
 export type UpdateAst = {
@@ -42,12 +43,14 @@ export type UpdateAst = {
   table: string;
   set: { column: string; value: unknown }[];
   where?: Expr;
+  returning?: string[];
 };
 
 export type DeleteAst = {
   type: 'delete';
   from: string;
   where?: Expr;
+  returning?: string[];
 };
 
 export type QueryAst = SelectAst | InsertAst | UpdateAst | DeleteAst;

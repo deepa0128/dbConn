@@ -5,6 +5,7 @@ export class UpdateBuilder {
   private table: string | undefined;
   private sets: { column: string; value: unknown }[] = [];
   private whereExpr: Expr | undefined;
+  private returningCols: string[] | undefined;
 
   tableName(name: string): this {
     assertSafeIdentifier(name, 'table');
@@ -23,6 +24,12 @@ export class UpdateBuilder {
     return this;
   }
 
+  returning(...cols: [string, ...string[]]): this {
+    for (const c of cols) assertSafeIdentifier(c, 'column');
+    this.returningCols = cols;
+    return this;
+  }
+
   /** @internal */
   toAst(): UpdateAst {
     if (!this.table) throw new Error('UpdateBuilder: call .tableName(name) before executing');
@@ -32,6 +39,7 @@ export class UpdateBuilder {
       table: this.table,
       set: this.sets,
       where: this.whereExpr,
+      returning: this.returningCols,
     };
   }
 }

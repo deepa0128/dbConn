@@ -48,6 +48,18 @@ export class DbClient {
     return this.driver.query<T>(sql, params);
   }
 
+  /**
+   * Run an INSERT / UPDATE / DELETE that has a `.returning()` clause and get
+   * the affected rows back. Postgres only — throws DbError on MySQL.
+   */
+  async returning<T extends Row = Row>(
+    builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
+  ): Promise<T[]> {
+    const ast = builder.toAst();
+    const { sql, params } = compileQuery(ast, this.driver.dialect);
+    return this.driver.query<T>(sql, params);
+  }
+
   async execute(
     builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
   ): Promise<ExecuteResult> {

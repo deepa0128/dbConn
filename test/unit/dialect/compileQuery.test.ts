@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileQuery } from '../../../src/dialect/compileQuery.js';
 import type { DeleteAst, InsertAst, SelectAst, UpdateAst } from '../../../src/ast.js';
+import { DbError } from '../../../src/errors.js';
 
 // ─── SELECT ────────────────────────────────────────────────────────────────
 
@@ -319,6 +320,31 @@ describe('compileQuery › INSERT', () => {
     });
   });
 
+  it('appends RETURNING clause (postgres)', () => {
+    const ast: InsertAst = {
+      type: 'insert',
+      into: 'users',
+      columns: ['email'],
+      rows: [{ email: 'a@b.com' }],
+      returning: ['id', 'email'],
+    };
+    expect(compileQuery(ast, 'postgres')).toEqual({
+      sql: 'INSERT INTO "users" ("email") VALUES ($1) RETURNING "id", "email"',
+      params: ['a@b.com'],
+    });
+  });
+
+  it('throws DbError for RETURNING on mysql', () => {
+    const ast: InsertAst = {
+      type: 'insert',
+      into: 'users',
+      columns: ['email'],
+      rows: [{ email: 'a@b.com' }],
+      returning: ['id'],
+    };
+    expect(() => compileQuery(ast, 'mysql')).toThrow(DbError);
+  });
+
   it('throws when a row is missing a declared column', () => {
     const ast: InsertAst = {
       type: 'insert',
@@ -395,6 +421,19 @@ describe('compileQuery › DELETE', () => {
     expect(compileQuery(ast, 'mysql')).toEqual({
       sql: 'DELETE FROM `tmp`',
       params: [],
+    });
+  });
+
+  it('appends RETURNING clause on delete (postgres)', () => {
+    const ast: DeleteAst = {
+      type: 'delete',
+      from: 'sessions',
+      where: { type: 'eq', column: 'id', value: 7 },
+      returning: ['id'],
+    };
+    expect(compileQuery(ast, 'postgres')).toEqual({
+      sql: 'DELETE FROM "sessions" WHERE "id" = $1 RETURNING "id"',
+      params: [7],
     });
   });
 });

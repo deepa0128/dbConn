@@ -1,4 +1,5 @@
 import type { DeleteAst, InsertAst, QueryAst, SelectAst, UpdateAst } from '../ast.js';
+import { DbError } from '../errors.js';
 import { assertSafeIdentifier } from '../identifier.js';
 import { compileExpr } from './compileExpr.js';
 import { ParamBuffer } from './params.js';
@@ -75,7 +76,11 @@ function compileInsert(ast: InsertAst, style: PlaceholderStyle): CompiledSql {
     rowSqls.push(`(${placeholders.join(', ')})`);
   }
 
-  const sql = `INSERT INTO ${q(ast.into)} (${colList}) VALUES ${rowSqls.join(', ')}`;
+  let sql = `INSERT INTO ${q(ast.into)} (${colList}) VALUES ${rowSqls.join(', ')}`;
+  if (ast.returning) {
+    if (style !== 'postgres') throw new DbError('RETURNING is only supported on PostgreSQL');
+    sql += ` RETURNING ${ast.returning.map((c) => q(c)).join(', ')}`;
+  }
   return { sql, params: params.values };
 }
 
@@ -94,6 +99,10 @@ function compileUpdate(ast: UpdateAst, style: PlaceholderStyle): CompiledSql {
   if (ast.where) {
     sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
   }
+  if (ast.returning) {
+    if (style !== 'postgres') throw new DbError('RETURNING is only supported on PostgreSQL');
+    sql += ` RETURNING ${ast.returning.map((c) => q(c)).join(', ')}`;
+  }
   return { sql, params: params.values };
 }
 
@@ -104,6 +113,10 @@ function compileDelete(ast: DeleteAst, style: PlaceholderStyle): CompiledSql {
   let sql = `DELETE FROM ${q(ast.from)}`;
   if (ast.where) {
     sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
+  }
+  if (ast.returning) {
+    if (style !== 'postgres') throw new DbError('RETURNING is only supported on PostgreSQL');
+    sql += ` RETURNING ${ast.returning.map((c) => q(c)).join(', ')}`;
   }
   return { sql, params: params.values };
 }

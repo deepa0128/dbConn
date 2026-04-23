@@ -5,6 +5,7 @@ export class InsertBuilder {
   private table: string | undefined;
   private cols: string[] = [];
   private rows: Record<string, unknown>[] = [];
+  private returningCols: string[] | undefined;
 
   into(table: string): this {
     assertSafeIdentifier(table, 'table');
@@ -23,6 +24,12 @@ export class InsertBuilder {
     return this;
   }
 
+  returning(...cols: [string, ...string[]]): this {
+    for (const c of cols) assertSafeIdentifier(c, 'column');
+    this.returningCols = cols;
+    return this;
+  }
+
   /** @internal */
   toAst(): InsertAst {
     if (!this.table) throw new Error('InsertBuilder: call .into(table) before executing');
@@ -33,6 +40,7 @@ export class InsertBuilder {
       into: this.table,
       columns: this.cols,
       rows: this.rows,
+      returning: this.returningCols,
     };
   }
 }
