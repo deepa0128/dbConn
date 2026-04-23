@@ -49,6 +49,37 @@ export class DbClient {
   }
 
   /**
+   * Stream a SELECT in batches. Yields rows one at a time without loading the
+   * full result set into memory. Respects any LIMIT set on the builder as a cap.
+   */
+  async *stream<T extends Row = Row>(
+    builder: SelectBuilder,
+    batchSize = 100,
+  ): AsyncIterable<T> {
+    const ast = builder.toAst();
+    const cap = ast.limit;
+    let offset = ast.offset ?? 0;
+    let fetched = 0;
+
+    while (true) {
+      const remaining = cap !== undefined ? cap - fetched : Infinity;
+      if (remaining <= 0) break;
+
+      const limit = Math.min(batchSize, remaining === Infinity ? batchSize : remaining);
+      const batchAst = { ...ast, limit, offset };
+      const { sql, params } = compileQuery(batchAst, this.driver.dialect);
+      const rows = await this.driver.query<T>(sql, params);
+
+      for (const row of rows) yield row;
+
+      fetched += rows.length;
+      offset += rows.length;
+
+      if (rows.length < limit) break;
+    }
+  }
+
+  /**
    * Run an INSERT / UPDATE / DELETE that has a `.returning()` clause and get
    * the affected rows back. Postgres only — throws DbError on MySQL.
    */
