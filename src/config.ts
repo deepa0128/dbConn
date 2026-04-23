@@ -9,6 +9,8 @@ export type PostgresConfig = {
   database: string;
   ssl?: boolean;
   maxConnections?: number;
+  /** Milliseconds before a query is cancelled server-side via statement_timeout. */
+  queryTimeoutMs?: number;
 };
 
 export type MysqlConfig = {
@@ -20,6 +22,11 @@ export type MysqlConfig = {
   database: string;
   ssl?: boolean;
   maxConnections?: number;
+  /**
+   * Milliseconds before a query is killed server-side via KILL QUERY.
+   * Applies to individual SELECT / DML statements via mysql2's built-in timeout mechanism.
+   */
+  queryTimeoutMs?: number;
 };
 
 export type DbConnConfig = PostgresConfig | MysqlConfig;

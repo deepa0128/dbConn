@@ -39,6 +39,7 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
     database: config.database,
     ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
     max: config.maxConnections ?? 10,
+    statement_timeout: config.queryTimeoutMs,
   });
 
   // Prevent unhandled 'error' events from crashing the process when an idle
