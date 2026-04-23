@@ -27,6 +27,10 @@ export type PostgresConfig = {
   queryTimeoutMs?: number;
   /** Called after every query with timing and optional error information. Accepts one handler or an array. */
   onQuery?: ((event: QueryEvent) => void) | Array<(event: QueryEvent) => void>;
+  /** Max number of retries on transient ConnectionError before giving up (default: 0 = no retry). */
+  maxRetries?: number;
+  /** Initial delay in ms before first retry; doubles each attempt (default: 100). */
+  retryDelayMs?: number;
 };
 
 export type MysqlConfig = {
@@ -45,6 +49,10 @@ export type MysqlConfig = {
   queryTimeoutMs?: number;
   /** Called after every query with timing and optional error information. Accepts one handler or an array. */
   onQuery?: ((event: QueryEvent) => void) | Array<(event: QueryEvent) => void>;
+  /** Max number of retries on transient ConnectionError before giving up (default: 0 = no retry). */
+  maxRetries?: number;
+  /** Initial delay in ms before first retry; doubles each attempt (default: 100). */
+  retryDelayMs?: number;
 };
 
 export type DbConnConfig = PostgresConfig | MysqlConfig;

@@ -3,6 +3,7 @@ import type { PostgresConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
 import type { DriverRow, HealthStatus, PoolMetrics, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
+import { withRetry } from './retry.js';
 
 // PostgreSQL SQLSTATE codes
 const CONSTRAINT_CODES = new Set(['23000', '23502', '23503', '23505', '23514']);
@@ -51,19 +52,24 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
   // client encounters a network failure. The error surfaces on the next query.
   pool.on('error', (_err: Error) => {});
 
+  const maxRetries = config.maxRetries ?? 0;
+  const retryDelayMs = config.retryDelayMs ?? 100;
+
   async function run<T extends DriverRow>(
     sql: string,
     params: unknown[],
   ): Promise<{ rows: T[]; rowCount: number }> {
-    const start = Date.now();
-    try {
-      const result = await pool.query<T>(sql, params);
-      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
-      return { rows: result.rows, rowCount: result.rowCount ?? 0 };
-    } catch (err) {
-      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
-      return normalizeError(err);
-    }
+    return withRetry(async () => {
+      const start = Date.now();
+      try {
+        const result = await pool.query<T>(sql, params);
+        notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
+        return { rows: result.rows, rowCount: result.rowCount ?? 0 };
+      } catch (err) {
+        notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
+        return normalizeError(err);
+      }
+    }, maxRetries, retryDelayMs);
   }
 
   let savepointCounter = 0;

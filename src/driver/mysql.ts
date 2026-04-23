@@ -4,6 +4,7 @@ import type { MysqlConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
 import type { DriverRow, HealthStatus, PoolMetrics, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
+import { withRetry } from './retry.js';
 
 const CONSTRAINT_CODES = new Set([
   'ER_DUP_ENTRY',
@@ -66,20 +67,25 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
     connectionLimit: config.maxConnections ?? 10,
   });
 
+  const maxRetries = config.maxRetries ?? 0;
+  const retryDelayMs = config.retryDelayMs ?? 100;
+
   // mysql2 accepts { sql, values, timeout } to trigger a server-side KILL QUERY
   // after `timeout` ms. When no timeout is set, use the plain (sql, values) form.
   async function runPool(sql: string, params: unknown[]) {
-    const start = Date.now();
-    try {
-      const result = config.queryTimeoutMs !== undefined
-        ? await pool.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs })
-        : await pool.execute(sql, params as never[]);
-      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
-      return result;
-    } catch (err) {
-      notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
-      throw err;
-    }
+    return withRetry(async () => {
+      const start = Date.now();
+      try {
+        const result = config.queryTimeoutMs !== undefined
+          ? await pool.execute({ sql, values: params as never[], timeout: config.queryTimeoutMs })
+          : await pool.execute(sql, params as never[]);
+        notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start });
+        return result;
+      } catch (err) {
+        notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
+        throw err;
+      }
+    }, maxRetries, retryDelayMs);
   }
 
   async function runConn(conn: mysql.PoolConnection, sql: string, params: unknown[]) {
