@@ -99,6 +99,22 @@ export class DbClient {
     return this.driver.execute(sql, params);
   }
 
+  /** Return the number of rows matching the builder's WHERE clause. */
+  async count(builder: SelectBuilder): Promise<number> {
+    const ast = builder.toAst();
+    const countAst = {
+      ...ast,
+      columns: [] as string[],
+      aggregates: [{ fn: 'count' as const, column: '*' as const, alias: '__n' }],
+      orderBy: undefined,
+      limit: undefined,
+      offset: undefined,
+    };
+    const { sql, params } = compileQuery(countAst, this.driver.dialect);
+    const rows = await this.driver.query<{ __n: string | number }>(sql, params);
+    return Number(rows[0]?.__n ?? 0);
+  }
+
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
     return this.driver.transaction(async (txDriver) => {
       const txClient = new DbClient(txDriver);
