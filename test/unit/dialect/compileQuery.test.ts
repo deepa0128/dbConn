@@ -490,6 +490,80 @@ describe('compileQuery › DELETE', () => {
   });
 });
 
+// ─── JOINS ─────────────────────────────────────────────────────────────────
+
+describe('compileQuery › JOINs', () => {
+  it('INNER JOIN with ON eq', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'orders',
+      columns: ['orders.id', 'users.email'],
+      joins: [{ type: 'inner', table: 'users', on: { type: 'eq', column: 'orders.user_id', value: 0 } }],
+    };
+    // use a real column match ON — we just test the structure
+    const noVal: SelectAst = {
+      type: 'select',
+      from: 'orders',
+      columns: '*',
+      joins: [{ type: 'inner', table: 'users', on: { type: 'eq', column: 'orders.user_id', value: 1 } }],
+    };
+    const { sql } = compileQuery(noVal, 'postgres');
+    expect(sql).toContain('INNER JOIN "users" ON');
+    expect(sql).toContain('"orders"."user_id"');
+  });
+
+  it('LEFT JOIN', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'users',
+      columns: '*',
+      joins: [{ type: 'left', table: 'orders', on: { type: 'eq', column: 'users.id', value: 1 } }],
+    };
+    const { sql } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('LEFT JOIN "orders"');
+  });
+
+  it('multiple JOINs in order', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'a',
+      columns: '*',
+      joins: [
+        { type: 'inner', table: 'b', on: { type: 'eq', column: 'a.id', value: 1 } },
+        { type: 'left',  table: 'c', on: { type: 'eq', column: 'b.id', value: 2 } },
+      ],
+    };
+    const { sql } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('INNER JOIN "b"');
+    expect(sql).toContain('LEFT JOIN "c"');
+    expect(sql.indexOf('INNER JOIN')).toBeLessThan(sql.indexOf('LEFT JOIN'));
+  });
+
+  it('qualified columns in SELECT list', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'orders',
+      columns: ['orders.id', 'users.name'],
+      joins: [{ type: 'inner', table: 'users', on: { type: 'eq', column: 'orders.user_id', value: 1 } }],
+    };
+    const { sql } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('"orders"."id"');
+    expect(sql).toContain('"users"."name"');
+  });
+
+  it('JOIN with mysql backtick quoting', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'orders',
+      columns: '*',
+      joins: [{ type: 'left', table: 'users', on: { type: 'eq', column: 'orders.user_id', value: 1 } }],
+    };
+    const { sql } = compileQuery(ast, 'mysql');
+    expect(sql).toContain('LEFT JOIN `users`');
+    expect(sql).toContain('`orders`.`user_id`');
+  });
+});
+
 // ─── GROUP BY / AGGREGATES ─────────────────────────────────────────────────
 
 describe('compileQuery › GROUP BY and aggregates', () => {

@@ -34,4 +34,4 @@ export type { Migration } from './migrate.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
 
-export type { AggregateColumn, Expr, OrderDirection } from './ast.js';
+export type { AggregateColumn, Expr, JoinClause, JoinType, OrderDirection } from './ast.js';

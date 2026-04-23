@@ -1,10 +1,11 @@
-import type { AggregateColumn, Expr, OrderDirection, SelectAst } from '../ast.js';
-import { assertSafeIdentifier } from '../identifier.js';
+import type { AggregateColumn, Expr, JoinClause, JoinType, OrderDirection, SelectAst } from '../ast.js';
+import { assertSafeIdentifier, assertSafeQualifiedIdentifier } from '../identifier.js';
 
 export class SelectBuilder {
   private table: string | undefined;
   private projection: string[] | '*' = '*';
   private aggregateList: AggregateColumn[] = [];
+  private joinList: JoinClause[] = [];
   private whereExpr: Expr | undefined;
   private groupByList: string[] = [];
   private havingExpr: Expr | undefined;
@@ -23,9 +24,23 @@ export class SelectBuilder {
       this.projection = '*';
       return this;
     }
-    for (const c of cols) assertSafeIdentifier(c, 'column');
+    for (const c of cols) assertSafeQualifiedIdentifier(c, 'column');
     this.projection = cols;
     return this;
+  }
+
+  join(table: string, on: Expr, type: JoinType = 'inner'): this {
+    assertSafeIdentifier(table, 'join table');
+    this.joinList.push({ type, table, on });
+    return this;
+  }
+
+  leftJoin(table: string, on: Expr): this {
+    return this.join(table, on, 'left');
+  }
+
+  rightJoin(table: string, on: Expr): this {
+    return this.join(table, on, 'right');
   }
 
   aggregate(fn: AggregateColumn['fn'], column: string | '*', alias?: string): this {
@@ -79,6 +94,7 @@ export class SelectBuilder {
       from: this.table,
       columns: this.projection,
       aggregates: this.aggregateList.length ? this.aggregateList : undefined,
+      joins: this.joinList.length ? this.joinList : undefined,
       where: this.whereExpr,
       groupBy: this.groupByList.length ? this.groupByList : undefined,
       having: this.havingExpr,

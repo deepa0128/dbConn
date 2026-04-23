@@ -26,11 +26,20 @@ export type AggregateColumn = {
   alias?: string;
 };
 
+export type JoinType = 'inner' | 'left' | 'right' | 'full';
+
+export type JoinClause = {
+  type: JoinType;
+  table: string;
+  on: Expr;
+};
+
 export type SelectAst = {
   type: 'select';
   from: string;
   columns: string[] | '*';
   aggregates?: AggregateColumn[];
+  joins?: JoinClause[];
   where?: Expr;
   groupBy?: string[];
   having?: Expr;

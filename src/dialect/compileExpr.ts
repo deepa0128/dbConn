@@ -1,11 +1,15 @@
 import type { Expr } from '../ast.js';
-import { assertSafeIdentifier } from '../identifier.js';
+import { assertSafeQualifiedIdentifier } from '../identifier.js';
 import type { ParamBuffer } from './params.js';
 
 export type PlaceholderStyle = 'postgres' | 'mysql';
 
 function colFragment(column: string, quoteId: (s: string) => string): string {
-  assertSafeIdentifier(column, 'column');
+  assertSafeQualifiedIdentifier(column, 'column');
+  const dot = column.indexOf('.');
+  if (dot !== -1) {
+    return `${quoteId(column.slice(0, dot))}.${quoteId(column.slice(dot + 1))}`;
+  }
   return quoteId(column);
 }
 

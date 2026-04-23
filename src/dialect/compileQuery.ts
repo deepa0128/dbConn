@@ -1,6 +1,6 @@
 import type { DeleteAst, InsertAst, QueryAst, SelectAst, UpdateAst } from '../ast.js';
 import { DbError } from '../errors.js';
-import { assertSafeIdentifier } from '../identifier.js';
+import { assertSafeIdentifier, assertSafeQualifiedIdentifier } from '../identifier.js';
 import { compileExpr } from './compileExpr.js';
 import { ParamBuffer } from './params.js';
 import type { PlaceholderStyle } from './compileExpr.js';
@@ -20,7 +20,11 @@ function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
   const regularCols =
     ast.columns === '*'
       ? (ast.aggregates?.length ? [] : ['*'])
-      : ast.columns.map((c) => q(c));
+      : ast.columns.map((c) => {
+          assertSafeQualifiedIdentifier(c, 'column');
+          const dot = c.indexOf('.');
+          return dot !== -1 ? `${q(c.slice(0, dot))}.${q(c.slice(dot + 1))}` : q(c);
+        });
 
   const aggCols = (ast.aggregates ?? []).map(({ fn, column, alias }) => {
     const col = column === '*' ? '*' : q(column);
@@ -30,6 +34,21 @@ function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
 
   const colList = [...regularCols, ...aggCols].join(', ') || '*';
   let sql = `SELECT ${colList} FROM ${q(ast.from)}`;
+
+  if (ast.joins?.length) {
+    const JOIN_KEYWORDS: Record<string, string> = {
+      inner: 'INNER JOIN',
+      left: 'LEFT JOIN',
+      right: 'RIGHT JOIN',
+      full: 'FULL JOIN',
+    };
+    for (const join of ast.joins) {
+      assertSafeIdentifier(join.table, 'join table');
+      const keyword = JOIN_KEYWORDS[join.type]!;
+      const on = compileExpr(join.on, style, params, q);
+      sql += ` ${keyword} ${q(join.table)} ON ${on}`;
+    }
+  }
 
   if (ast.where) {
     sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
