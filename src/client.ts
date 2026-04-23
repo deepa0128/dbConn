@@ -106,6 +106,11 @@ export class DbClient {
     });
   }
 
+  /** Execute a raw SQL query and return rows typed as T. Use with care — no SQL injection protection. */
+  async sql<T extends Row = Row>(rawSql: string, params: unknown[] = []): Promise<T[]> {
+    return this.driver.query<T>(rawSql, params);
+  }
+
   async close(): Promise<void> {
     await this.driver.close();
   }

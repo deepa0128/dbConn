@@ -29,6 +29,8 @@ export {
 
 export { assertSafeIdentifier } from './identifier.js';
 export { parseConnectionUrl } from './parseUrl.js';
+export { migrateDown, migrateUp } from './migrate.js';
+export type { Migration } from './migrate.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
 
