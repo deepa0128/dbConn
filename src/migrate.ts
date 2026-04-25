@@ -1,4 +1,5 @@
 import type { DbClient, Row } from './client.js';
+import { DbError } from './errors.js';
 
 export type Migration = {
   /** Unique name, used as the primary key in the migrations table. */
@@ -18,6 +19,9 @@ function placeholder(client: DbClient, index: number): string {
 }
 
 async function ensureTable(client: DbClient): Promise<void> {
+  if (client.dialect === 'mongodb') {
+    throw new DbError('migrateUp/migrateDown are SQL-only and are not supported for MongoDB');
+  }
   const t = q(client, TABLE);
   const tsType =
     client.dialect === 'postgres'
@@ -27,6 +31,9 @@ async function ensureTable(client: DbClient): Promise<void> {
 }
 
 async function appliedNames(client: DbClient): Promise<Set<string>> {
+  if (client.dialect === 'mongodb') {
+    throw new DbError('migrateUp/migrateDown are SQL-only and are not supported for MongoDB');
+  }
   const rows = await client.sql<Row & { name: string }>(
     `SELECT name FROM ${q(client, TABLE)} ORDER BY applied_at`,
   );
@@ -34,6 +41,9 @@ async function appliedNames(client: DbClient): Promise<Set<string>> {
 }
 
 async function recordApplied(client: DbClient, name: string): Promise<void> {
+  if (client.dialect === 'mongodb') {
+    throw new DbError('migrateUp/migrateDown are SQL-only and are not supported for MongoDB');
+  }
   await client.sql(
     `INSERT INTO ${q(client, TABLE)} (name) VALUES (${placeholder(client, 1)})`,
     [name],
@@ -41,6 +51,9 @@ async function recordApplied(client: DbClient, name: string): Promise<void> {
 }
 
 async function removeRecord(client: DbClient, name: string): Promise<void> {
+  if (client.dialect === 'mongodb') {
+    throw new DbError('migrateUp/migrateDown are SQL-only and are not supported for MongoDB');
+  }
   await client.sql(
     `DELETE FROM ${q(client, TABLE)} WHERE name = ${placeholder(client, 1)}`,
     [name],

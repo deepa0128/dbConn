@@ -1,4 +1,4 @@
-export type DatabaseDialect = 'postgres' | 'mysql';
+export type DatabaseDialect = 'postgres' | 'mysql' | 'mongodb';
 
 export type SslOptions = {
   ca?: string;
@@ -55,4 +55,25 @@ export type MysqlConfig = {
   retryDelayMs?: number;
 };
 
-export type DbConnConfig = PostgresConfig | MysqlConfig;
+export type MongoDbConfig = {
+  dialect: 'mongodb';
+  /**
+   * MongoDB connection string.
+   * Supports mongodb:// and mongodb+srv:// schemes.
+   */
+  uri: string;
+  /**
+   * Database name. Optional when the URI already includes it.
+   */
+  database?: string;
+  /** Max number of pooled connections (maps to MongoClient maxPoolSize). */
+  maxConnections?: number;
+  /** Called after every MongoDB operation with timing and optional error information. */
+  onQuery?: ((event: QueryEvent) => void) | Array<(event: QueryEvent) => void>;
+  /** Max number of retries on transient ConnectionError before giving up (default: 0 = no retry). */
+  maxRetries?: number;
+  /** Initial delay in ms before first retry; doubles each attempt (default: 100). */
+  retryDelayMs?: number;
+};
+
+export type DbConnConfig = PostgresConfig | MysqlConfig | MongoDbConfig;

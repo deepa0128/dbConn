@@ -2,6 +2,7 @@ import type { DbClient, Row } from './client.js';
 import { SelectBuilder } from './builder/select.js';
 import { compileQuery } from './dialect/compileQuery.js';
 import type { Expr, OrderDirection } from './ast.js';
+import { DbError } from './errors.js';
 
 export type PageResult<T extends Row> = {
   rows: T[];
@@ -52,6 +53,9 @@ export async function paginate<T extends Row = Row>(
     limit: limit + 1, // fetch one extra to detect hasMore
   };
 
+  if (client.dialect === 'mongodb') {
+    throw new DbError('paginate() is SQL-only and is not supported for MongoDB');
+  }
   const { sql, params } = compileQuery(pageAst, client.dialect);
   const rows = await client.sql<T>(sql, params);
 

@@ -3,7 +3,7 @@ import type { DbConnConfig } from './config.js';
 /**
  * Parse a connection URL into a DbConnConfig object.
  *
- * Supported schemes: postgres://, postgresql://, mysql://
+ * Supported schemes: postgres://, postgresql://, mysql://, mongodb://, mongodb+srv://
  *
  * Recognised query-string options:
  *   ssl=true | sslmode=require|verify-full|verify-ca  → ssl: true
@@ -19,6 +19,18 @@ export function parseConnectionUrl(url: string): DbConnConfig {
   }
 
   const scheme = parsed.protocol.replace(/:$/, '');
+  if (scheme === 'mongodb' || scheme === 'mongodb+srv') {
+    const dbName = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+    const maxConnRaw = parsed.searchParams.get('maxPoolSize');
+    const maxConnections = maxConnRaw !== null ? parseInt(maxConnRaw, 10) : undefined;
+    return {
+      dialect: 'mongodb',
+      uri: url,
+      ...(dbName ? { database: dbName } : {}),
+      ...(maxConnections !== undefined ? { maxConnections } : {}),
+    };
+  }
+
   const host = parsed.hostname;
   const user = decodeURIComponent(parsed.username);
   const password = decodeURIComponent(parsed.password);
@@ -63,6 +75,6 @@ export function parseConnectionUrl(url: string): DbConnConfig {
   }
 
   throw new TypeError(
-    `Unsupported scheme ${JSON.stringify(scheme)}. Use postgres://, postgresql://, or mysql://`,
+    `Unsupported scheme ${JSON.stringify(scheme)}. Use postgres://, postgresql://, mysql://, mongodb://, or mongodb+srv://`,
   );
 }

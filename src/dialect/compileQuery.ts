@@ -7,6 +7,7 @@ import type { PlaceholderStyle, SubqueryCompiler } from './compileExpr.js';
 import { quoteMysqlIdent, quotePostgresIdent } from './quote.js';
 
 export type CompiledSql = { sql: string; params: unknown[] };
+export type SqlDialect = 'postgres' | 'mysql';
 
 function quote(style: PlaceholderStyle): (s: string) => string {
   return style === 'postgres' ? quotePostgresIdent : quoteMysqlIdent;
@@ -185,7 +186,7 @@ function compileDelete(ast: DeleteAst, style: PlaceholderStyle): CompiledSql {
   return { sql, params: params.values };
 }
 
-export function compileQuery(ast: QueryAst, dialect: 'postgres' | 'mysql'): CompiledSql {
+export function compileQuery(ast: QueryAst, dialect: SqlDialect): CompiledSql {
   const style: PlaceholderStyle = dialect === 'postgres' ? 'postgres' : 'mysql';
   switch (ast.type) {
     case 'select':

@@ -2,7 +2,7 @@ import type { DbConnConfig } from './config.js';
 import { compileQuery } from './dialect/compileQuery.js';
 import { createDriver } from './driver/factory.js';
 import { parseConnectionUrl } from './parseUrl.js';
-import type { HealthStatus, PoolMetrics, SqlDriver } from './driver/types.js';
+import type { DbDriver, HealthStatus, MongoDriver, PoolMetrics, SqlDriver } from './driver/types.js';
 import { DeleteBuilder } from './builder/delete.js';
 import { InsertBuilder } from './builder/insert.js';
 import { SelectBuilder } from './builder/select.js';
@@ -10,6 +10,7 @@ import { UpdateBuilder } from './builder/update.js';
 import { paginate as paginateImpl } from './paginate.js';
 import type { CursorPageOptions, PageResult } from './paginate.js';
 import { TypedClient } from './typed.js';
+import { DbError } from './errors.js';
 
 export type Row = Record<string, unknown>;
 
@@ -31,14 +32,34 @@ function withSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 export class DbClient {
-  private readonly driver: SqlDriver;
+  private readonly driver: DbDriver;
 
-  constructor(driver: SqlDriver) {
+  constructor(driver: DbDriver) {
     this.driver = driver;
   }
 
-  get dialect(): 'postgres' | 'mysql' {
+  get dialect(): 'postgres' | 'mysql' | 'mongodb' {
     return this.driver.dialect;
+  }
+
+  private ensureSqlFeature(feature: string): void {
+    if (this.driver.dialect === 'mongodb') {
+      throw new DbError(`${feature} is SQL-only and is not supported for MongoDB`);
+    }
+  }
+
+  private getSqlDriver(): SqlDriver {
+    if (this.driver.dialect === 'mongodb') {
+      throw new DbError('This operation is SQL-only and is not supported for MongoDB');
+    }
+    return this.driver;
+  }
+
+  private getMongoDriver(): MongoDriver {
+    if (this.driver.dialect !== 'mongodb') {
+      throw new DbError('MongoDB-specific path called for SQL driver');
+    }
+    return this.driver;
   }
 
   selectFrom(table: string): SelectBuilder {
@@ -66,8 +87,12 @@ export class DbClient {
     signal?: AbortSignal,
   ): Promise<T[]> {
     const ast = builder.toAst();
-    const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return withSignal(this.driver.query<T>(sql, params), signal);
+    if (this.driver.dialect === 'mongodb') {
+      return withSignal(this.getMongoDriver().query<T>(ast), signal);
+    }
+    const sqlDriver = this.getSqlDriver();
+    const { sql, params } = compileQuery(ast, sqlDriver.dialect);
+    return withSignal(sqlDriver.query<T>(sql, params), signal);
   }
 
   /**
@@ -78,6 +103,7 @@ export class DbClient {
     builder: SelectBuilder,
     batchSize = 100,
   ): AsyncIterable<T> {
+    this.ensureSqlFeature('db.stream()');
     const ast = builder.toAst();
     const cap = ast.limit;
     let offset = ast.offset ?? 0;
@@ -89,8 +115,9 @@ export class DbClient {
 
       const limit = Math.min(batchSize, remaining === Infinity ? batchSize : remaining);
       const batchAst = { ...ast, limit, offset };
-      const { sql, params } = compileQuery(batchAst, this.driver.dialect);
-      const rows = await this.driver.query<T>(sql, params);
+      const sqlDriver = this.getSqlDriver();
+      const { sql, params } = compileQuery(batchAst, sqlDriver.dialect);
+      const rows = await sqlDriver.query<T>(sql, params);
 
       for (const row of rows) yield row;
 
@@ -106,12 +133,17 @@ export class DbClient {
     signal?: AbortSignal,
   ): Promise<ExecuteResult> {
     const ast = builder.toAst();
-    const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return withSignal(this.driver.execute(sql, params), signal);
+    if (this.driver.dialect === 'mongodb') {
+      return withSignal(this.getMongoDriver().execute(ast), signal);
+    }
+    const sqlDriver = this.getSqlDriver();
+    const { sql, params } = compileQuery(ast, sqlDriver.dialect);
+    return withSignal(sqlDriver.execute(sql, params), signal);
   }
 
   /** Return the number of rows matching the builder's WHERE clause. */
   async count(builder: SelectBuilder): Promise<number> {
+    this.ensureSqlFeature('db.count()');
     const ast = builder.toAst();
     const countAst = {
       ...ast,
@@ -121,8 +153,9 @@ export class DbClient {
       limit: undefined,
       offset: undefined,
     };
-    const { sql, params } = compileQuery(countAst, this.driver.dialect);
-    const rows = await this.driver.query<{ __n: string | number }>(sql, params);
+    const sqlDriver = this.getSqlDriver();
+    const { sql, params } = compileQuery(countAst, sqlDriver.dialect);
+    const rows = await sqlDriver.query<{ __n: string | number }>(sql, params);
     return Number(rows[0]?.__n ?? 0);
   }
 
@@ -131,10 +164,17 @@ export class DbClient {
     builder: SelectBuilder,
     options: CursorPageOptions,
   ): Promise<PageResult<T>> {
+    this.ensureSqlFeature('db.paginate()');
     return paginateImpl<T>(this, builder, options);
   }
 
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
+    if (this.driver.dialect === 'mongodb') {
+      return this.driver.transaction(async (txDriver) => {
+        const txClient = new DbClient(txDriver);
+        return fn(txClient);
+      });
+    }
     return this.driver.transaction(async (txDriver) => {
       const txClient = new DbClient(txDriver);
       return fn(txClient);
@@ -158,10 +198,11 @@ export class DbClient {
     stringsOrSql: TemplateStringsArray | string,
     ...rest: unknown[]
   ): Promise<T[]> {
+    this.ensureSqlFeature('db.sql()');
     if (typeof stringsOrSql === 'string') {
       const params = (rest[0] as unknown[] | undefined) ?? [];
       const signal = rest[1] as AbortSignal | undefined;
-      return withSignal(this.driver.query<T>(stringsOrSql, params), signal);
+      return withSignal(this.getSqlDriver().query<T>(stringsOrSql, params), signal);
     }
     // Tagged template: build dialect-aware SQL from the template parts and values
     const strings = stringsOrSql;
@@ -170,10 +211,10 @@ export class DbClient {
     const params: unknown[] = [];
     for (let i = 0; i < values.length; i++) {
       params.push(values[i]);
-      const placeholder = this.driver.dialect === 'postgres' ? `$${params.length}` : '?';
+      const placeholder = this.getSqlDriver().dialect === 'postgres' ? `$${params.length}` : '?';
       rawSql += placeholder + strings[i + 1]!;
     }
-    return this.driver.query<T>(rawSql, params);
+    return this.getSqlDriver().query<T>(rawSql, params);
   }
 
   /** Ping the database and return latency + health status. */
@@ -192,9 +233,11 @@ export class DbClient {
    * MySQL: columns are `id`, `select_type`, `table`, `type`, `key`, etc.
    */
   async explain(builder: SelectBuilder): Promise<Row[]> {
+    this.ensureSqlFeature('db.explain()');
     const ast = builder.toAst();
-    const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return this.driver.query<Row>(`EXPLAIN ${sql}`, params);
+    const sqlDriver = this.getSqlDriver();
+    const { sql, params } = compileQuery(ast, sqlDriver.dialect);
+    return sqlDriver.query<Row>(`EXPLAIN ${sql}`, params);
   }
 
   /** Return a type-safe wrapper that constrains table names to keys of Schema. */

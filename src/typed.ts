@@ -102,7 +102,7 @@ export class TypedSelectBuilder<Row extends Record<string, unknown>> {
 export class TypedClient<Schema extends Record<string, Record<string, unknown>>> {
   constructor(readonly raw: DbClient) {}
 
-  get dialect(): 'postgres' | 'mysql' {
+  get dialect(): 'postgres' | 'mysql' | 'mongodb' {
     return this.raw.dialect;
   }
 
