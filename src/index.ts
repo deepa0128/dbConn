@@ -34,7 +34,6 @@ export type { Subquery } from './ast.js';
 
 export { assertSafeIdentifier } from './identifier.js';
 export { parseConnectionUrl } from './parseUrl.js';
-export { paginate } from './paginate.js';
 export type { CursorPageOptions, PageResult } from './paginate.js';
 export { migrateDown, migrateUp } from './migrate.js';
 export type { Migration } from './migrate.js';

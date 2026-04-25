@@ -7,6 +7,8 @@ import { DeleteBuilder } from './builder/delete.js';
 import { InsertBuilder } from './builder/insert.js';
 import { SelectBuilder } from './builder/select.js';
 import { UpdateBuilder } from './builder/update.js';
+import { paginate as paginateImpl } from './paginate.js';
+import type { CursorPageOptions, PageResult } from './paginate.js';
 
 export type Row = Record<string, unknown>;
 
@@ -54,8 +56,14 @@ export class DbClient {
     return new DeleteBuilder().from(table);
   }
 
-  /** Run a SELECT; returns result rows typed as T (defaults to Row). */
-  async fetch<T extends Row = Row>(builder: SelectBuilder, signal?: AbortSignal): Promise<T[]> {
+  /**
+   * Run a SELECT — or an INSERT/UPDATE/DELETE with a `.returning()` clause —
+   * and get the result rows back typed as T.
+   */
+  async fetch<T extends Row = Row>(
+    builder: SelectBuilder | InsertBuilder | UpdateBuilder | DeleteBuilder,
+    signal?: AbortSignal,
+  ): Promise<T[]> {
     const ast = builder.toAst();
     const { sql, params } = compileQuery(ast, this.driver.dialect);
     return withSignal(this.driver.query<T>(sql, params), signal);
@@ -92,18 +100,6 @@ export class DbClient {
     }
   }
 
-  /**
-   * Run an INSERT / UPDATE / DELETE that has a `.returning()` clause and get
-   * the affected rows back. Postgres only — throws DbError on MySQL.
-   */
-  async returning<T extends Row = Row>(
-    builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
-  ): Promise<T[]> {
-    const ast = builder.toAst();
-    const { sql, params } = compileQuery(ast, this.driver.dialect);
-    return this.driver.query<T>(sql, params);
-  }
-
   async execute(
     builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
     signal?: AbortSignal,
@@ -127,6 +123,14 @@ export class DbClient {
     const { sql, params } = compileQuery(countAst, this.driver.dialect);
     const rows = await this.driver.query<{ __n: string | number }>(sql, params);
     return Number(rows[0]?.__n ?? 0);
+  }
+
+  /** Fetch one page using keyset (cursor) pagination. */
+  async paginate<T extends Row = Row>(
+    builder: SelectBuilder,
+    options: CursorPageOptions,
+  ): Promise<PageResult<T>> {
+    return paginateImpl<T>(this, builder, options);
   }
 
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { paginate } from '../../src/paginate.js';
 
 const { mockQuery } = vi.hoisted(() => ({ mockQuery: vi.fn() }));
 
@@ -14,13 +13,13 @@ function makeClient() {
   return createClient({ dialect: 'postgres', host: 'h', user: 'u', password: 'p', database: 'd' });
 }
 
-describe('paginate()', () => {
+describe('client.paginate()', () => {
   beforeEach(() => mockQuery.mockReset());
 
   it('returns rows and no nextCursor when fewer than limit', async () => {
     mockQuery.mockResolvedValue({ rows: [{ id: 1 }, { id: 2 }], rowCount: 2 });
     const client = makeClient();
-    const result = await paginate(client, client.selectFrom('users'), { cursorColumn: 'id', limit: 10 });
+    const result = await client.paginate(client.selectFrom('users'), { cursorColumn: 'id', limit: 10 });
     expect(result.rows).toEqual([{ id: 1 }, { id: 2 }]);
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeUndefined();
@@ -33,7 +32,7 @@ describe('paginate()', () => {
       rowCount: 3,
     });
     const client = makeClient();
-    const result = await paginate(client, client.selectFrom('users'), { cursorColumn: 'id', limit: 2 });
+    const result = await client.paginate(client.selectFrom('users'), { cursorColumn: 'id', limit: 2 });
     expect(result.rows).toHaveLength(2);
     expect(result.hasMore).toBe(true);
     expect(result.nextCursor).toBeDefined();
@@ -43,7 +42,7 @@ describe('paginate()', () => {
     mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     const cursor = Buffer.from('42').toString('base64');
     const client = makeClient();
-    await paginate(client, client.selectFrom('users'), { cursorColumn: 'id', limit: 10, after: cursor });
+    await client.paginate(client.selectFrom('users'), { cursorColumn: 'id', limit: 10, after: cursor });
     const sql = mockQuery.mock.calls[0][0] as string;
     expect(sql).toContain('"id" > $1');
   });
@@ -52,7 +51,7 @@ describe('paginate()', () => {
     mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     const cursor = Buffer.from('99').toString('base64');
     const client = makeClient();
-    await paginate(client, client.selectFrom('orders'), {
+    await client.paginate(client.selectFrom('orders'), {
       cursorColumn: 'id',
       direction: 'desc',
       limit: 5,
@@ -66,8 +65,7 @@ describe('paginate()', () => {
     mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     const cursor = Buffer.from('10').toString('base64');
     const client = makeClient();
-    await paginate(
-      client,
+    await client.paginate(
       client.selectFrom('users').where({ type: 'eq', column: 'active', value: true }),
       { cursorColumn: 'id', limit: 5, after: cursor },
     );
