@@ -19,7 +19,11 @@ export type Expr =
   | { type: 'between'; column: string; low: unknown; high: unknown }
   | { type: 'isNull'; column: string }
   | { type: 'isNotNull'; column: string }
-  | { type: 'raw'; sql: string; params?: unknown[] };
+  | { type: 'raw'; sql: string; params?: unknown[] }
+  | { type: 'inSubquery'; column: string; query: SelectAst }
+  | { type: 'notInSubquery'; column: string; query: SelectAst }
+  | { type: 'exists'; query: SelectAst }
+  | { type: 'notExists'; query: SelectAst };
 
 export type AggregateColumn = {
   fn: 'count' | 'sum' | 'avg' | 'min' | 'max';
@@ -81,3 +85,6 @@ export type DeleteAst = {
 };
 
 export type QueryAst = SelectAst | InsertAst | UpdateAst | DeleteAst;
+
+/** Opaque wrapper around a SelectAst for use as a subquery in expressions. */
+export type Subquery = { readonly _brand: 'subquery'; readonly ast: SelectAst };

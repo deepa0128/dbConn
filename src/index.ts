@@ -12,6 +12,7 @@ export {
   and,
   between,
   eq,
+  exists,
   gt,
   gte,
   ilike,
@@ -22,11 +23,14 @@ export {
   lt,
   lte,
   ne,
+  notExists,
   notInList,
   notLike,
   or,
   rawExpr,
+  subquery,
 } from './builder/expr.js';
+export type { Subquery } from './ast.js';
 
 export { assertSafeIdentifier } from './identifier.js';
 export { parseConnectionUrl } from './parseUrl.js';

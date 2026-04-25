@@ -3,7 +3,7 @@ import { DbError } from '../errors.js';
 import { assertSafeIdentifier, assertSafeQualifiedIdentifier } from '../identifier.js';
 import { compileExpr } from './compileExpr.js';
 import { ParamBuffer } from './params.js';
-import type { PlaceholderStyle } from './compileExpr.js';
+import type { PlaceholderStyle, SubqueryCompiler } from './compileExpr.js';
 import { quoteMysqlIdent, quotePostgresIdent } from './quote.js';
 
 export type CompiledSql = { sql: string; params: unknown[] };
@@ -12,10 +12,11 @@ function quote(style: PlaceholderStyle): (s: string) => string {
   return style === 'postgres' ? quotePostgresIdent : quoteMysqlIdent;
 }
 
-function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
-  const params = new ParamBuffer();
+/** Inner: compiles a SELECT using a shared param buffer (enables subquery param sharing). */
+function compileSelectSql(ast: SelectAst, style: PlaceholderStyle, params: ParamBuffer): string {
   const q = quote(style);
   assertSafeIdentifier(ast.from, 'table');
+  const compileSub: SubqueryCompiler = (sub, p) => compileSelectSql(sub, style, p);
 
   const regularCols =
     ast.columns === '*'
@@ -34,62 +35,50 @@ function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
 
   const distinct = ast.distinct ? 'DISTINCT ' : '';
   const colList = [...regularCols, ...aggCols].join(', ') || '*';
-  const fromRef = ast.fromAlias
-    ? `${q(ast.from)} AS ${q(ast.fromAlias)}`
-    : q(ast.from);
+  const fromRef = ast.fromAlias ? `${q(ast.from)} AS ${q(ast.fromAlias)}` : q(ast.from);
   let sql = `SELECT ${distinct}${colList} FROM ${fromRef}`;
 
   if (ast.joins?.length) {
     const JOIN_KEYWORDS: Record<string, string> = {
-      inner: 'INNER JOIN',
-      left: 'LEFT JOIN',
-      right: 'RIGHT JOIN',
-      full: 'FULL JOIN',
+      inner: 'INNER JOIN', left: 'LEFT JOIN', right: 'RIGHT JOIN', full: 'FULL JOIN',
     };
     for (const join of ast.joins) {
       assertSafeIdentifier(join.table, 'join table');
       const keyword = JOIN_KEYWORDS[join.type]!;
       const tableRef = join.alias ? `${q(join.table)} AS ${q(join.alias)}` : q(join.table);
-      const on = compileExpr(join.on, style, params, q);
-      sql += ` ${keyword} ${tableRef} ON ${on}`;
+      sql += ` ${keyword} ${tableRef} ON ${compileExpr(join.on, style, params, q, compileSub)}`;
     }
   }
 
-  if (ast.where) {
-    sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
-  }
+  if (ast.where) sql += ` WHERE ${compileExpr(ast.where, style, params, q, compileSub)}`;
 
   if (ast.groupBy?.length) {
     for (const c of ast.groupBy) assertSafeIdentifier(c, 'column');
     sql += ` GROUP BY ${ast.groupBy.map(q).join(', ')}`;
   }
 
-  if (ast.having) {
-    sql += ` HAVING ${compileExpr(ast.having, style, params, q)}`;
-  }
+  if (ast.having) sql += ` HAVING ${compileExpr(ast.having, style, params, q, compileSub)}`;
 
   if (ast.orderBy?.length) {
-    const ob = ast.orderBy
-      .map(({ column, direction }) => `${q(column)} ${direction.toUpperCase()}`)
-      .join(', ');
-    sql += ` ORDER BY ${ob}`;
+    sql += ` ORDER BY ${ast.orderBy.map(({ column, direction }) => `${q(column)} ${direction.toUpperCase()}`).join(', ')}`;
   }
 
   if (ast.limit !== undefined) {
-    if (!Number.isInteger(ast.limit) || ast.limit < 0) {
-      throw new TypeError('limit must be a non-negative integer');
-    }
+    if (!Number.isInteger(ast.limit) || ast.limit < 0) throw new TypeError('limit must be a non-negative integer');
     sql += ` LIMIT ${ast.limit}`;
   }
 
   if (ast.offset !== undefined) {
-    if (!Number.isInteger(ast.offset) || ast.offset < 0) {
-      throw new TypeError('offset must be a non-negative integer');
-    }
+    if (!Number.isInteger(ast.offset) || ast.offset < 0) throw new TypeError('offset must be a non-negative integer');
     sql += ` OFFSET ${ast.offset}`;
   }
 
-  return { sql, params: params.values };
+  return sql;
+}
+
+function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {
+  const params = new ParamBuffer();
+  return { sql: compileSelectSql(ast, style, params), params: params.values };
 }
 
 function compileInsert(ast: InsertAst, style: PlaceholderStyle): CompiledSql {
@@ -159,9 +148,10 @@ function compileUpdate(ast: UpdateAst, style: PlaceholderStyle): CompiledSql {
     return `${q(column)} = ${style === 'postgres' ? `$${i}` : '?'}`;
   });
 
+  const compileSub: SubqueryCompiler = (sub, p) => compileSelectSql(sub, style, p);
   let sql = `UPDATE ${q(ast.table)} SET ${sets.join(', ')}`;
   if (ast.where) {
-    sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
+    sql += ` WHERE ${compileExpr(ast.where, style, params, q, compileSub)}`;
   }
   if (ast.returning) {
     if (style !== 'postgres') throw new DbError('RETURNING is only supported on PostgreSQL');
@@ -174,9 +164,10 @@ function compileDelete(ast: DeleteAst, style: PlaceholderStyle): CompiledSql {
   const params = new ParamBuffer();
   const q = quote(style);
   assertSafeIdentifier(ast.from, 'table');
+  const compileSub: SubqueryCompiler = (sub, p) => compileSelectSql(sub, style, p);
   let sql = `DELETE FROM ${q(ast.from)}`;
   if (ast.where) {
-    sql += ` WHERE ${compileExpr(ast.where, style, params, q)}`;
+    sql += ` WHERE ${compileExpr(ast.where, style, params, q, compileSub)}`;
   }
   if (ast.returning) {
     if (style !== 'postgres') throw new DbError('RETURNING is only supported on PostgreSQL');

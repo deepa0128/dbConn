@@ -1,4 +1,5 @@
-import type { Expr } from '../ast.js';
+import type { Expr, Subquery } from '../ast.js';
+import type { SelectBuilder } from './select.js';
 
 export function eq(column: string, value: unknown): Expr {
   return { type: 'eq', column, value };
@@ -32,12 +33,14 @@ export function or(...items: Expr[]): Expr {
   return { type: 'or', items };
 }
 
-export function inList(column: string, values: unknown[]): Expr {
-  return { type: 'in', column, values };
+export function inList(column: string, values: unknown[] | Subquery): Expr {
+  if (Array.isArray(values)) return { type: 'in', column, values };
+  return { type: 'inSubquery', column, query: values.ast };
 }
 
-export function notInList(column: string, values: unknown[]): Expr {
-  return { type: 'notIn', column, values };
+export function notInList(column: string, values: unknown[] | Subquery): Expr {
+  if (Array.isArray(values)) return { type: 'notIn', column, values };
+  return { type: 'notInSubquery', column, query: values.ast };
 }
 
 export function like(column: string, pattern: string): Expr {
@@ -73,4 +76,19 @@ export function isNotNull(column: string): Expr {
  */
 export function rawExpr(sql: string, params?: unknown[]): Expr {
   return { type: 'raw', sql, params };
+}
+
+/** Wrap a SelectBuilder as a subquery for use with inList, notInList, exists, notExists. */
+export function subquery(builder: SelectBuilder): Subquery {
+  return { _brand: 'subquery', ast: builder.toAst() };
+}
+
+/** WHERE EXISTS (SELECT ...) */
+export function exists(sq: Subquery): Expr {
+  return { type: 'exists', query: sq.ast };
+}
+
+/** WHERE NOT EXISTS (SELECT ...) */
+export function notExists(sq: Subquery): Expr {
+  return { type: 'notExists', query: sq.ast };
 }

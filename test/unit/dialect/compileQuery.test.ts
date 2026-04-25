@@ -490,6 +490,66 @@ describe('compileQuery › DELETE', () => {
   });
 });
 
+// ─── SUBQUERIES ───────────────────────────────────────────────────────────
+
+describe('compileQuery › subqueries', () => {
+  it('IN (SELECT ...) shares param buffer with outer query', () => {
+    const sub: SelectAst = { type: 'select', from: 'banned', columns: ['user_id'], where: { type: 'eq', column: 'active', value: true } };
+    const ast: SelectAst = {
+      type: 'select', from: 'users', columns: '*',
+      where: { type: 'inSubquery', column: 'id', query: sub },
+    };
+    const { sql, params } = compileQuery(ast, 'postgres');
+    expect(sql).toBe('SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "banned" WHERE "active" = $1)');
+    expect(params).toEqual([true]);
+  });
+
+  it('NOT IN (SELECT ...) compiles correctly', () => {
+    const sub: SelectAst = { type: 'select', from: 'blocked', columns: ['id'] };
+    const ast: SelectAst = { type: 'select', from: 'users', columns: '*', where: { type: 'notInSubquery', column: 'id', query: sub } };
+    const { sql } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('"id" NOT IN (SELECT "id" FROM "blocked")');
+  });
+
+  it('EXISTS (SELECT ...) compiles correctly', () => {
+    const sub: SelectAst = { type: 'select', from: 'orders', columns: ['id'], where: { type: 'eq', column: 'user_id', value: 1 } };
+    const ast: SelectAst = { type: 'select', from: 'users', columns: '*', where: { type: 'exists', query: sub } };
+    const { sql, params } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('EXISTS (SELECT "id" FROM "orders" WHERE "user_id" = $1)');
+    expect(params).toEqual([1]);
+  });
+
+  it('NOT EXISTS compiles correctly', () => {
+    const sub: SelectAst = { type: 'select', from: 'orders', columns: ['id'] };
+    const ast: SelectAst = { type: 'select', from: 'users', columns: '*', where: { type: 'notExists', query: sub } };
+    const { sql } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('NOT EXISTS (SELECT "id" FROM "orders")');
+  });
+
+  it('outer and subquery params are numbered sequentially', () => {
+    const sub: SelectAst = { type: 'select', from: 'orders', columns: ['user_id'], where: { type: 'eq', column: 'status', value: 'paid' } };
+    const ast: SelectAst = {
+      type: 'select', from: 'users', columns: '*',
+      where: { type: 'and', items: [
+        { type: 'eq', column: 'active', value: true },
+        { type: 'inSubquery', column: 'id', query: sub },
+      ]},
+    };
+    const { sql, params } = compileQuery(ast, 'postgres');
+    expect(sql).toContain('"active" = $1');
+    expect(sql).toContain('"status" = $2');
+    expect(params).toEqual([true, 'paid']);
+  });
+
+  it('subqueries use mysql ? placeholders', () => {
+    const sub: SelectAst = { type: 'select', from: 'banned', columns: ['id'], where: { type: 'eq', column: 'active', value: true } };
+    const ast: SelectAst = { type: 'select', from: 'users', columns: '*', where: { type: 'inSubquery', column: 'id', query: sub } };
+    const { sql, params } = compileQuery(ast, 'mysql');
+    expect(sql).toBe('SELECT * FROM `users` WHERE `id` IN (SELECT `id` FROM `banned` WHERE `active` = ?)');
+    expect(params).toEqual([true]);
+  });
+});
+
 // ─── RAW EXPRESSIONS ──────────────────────────────────────────────────────
 
 describe('compileQuery › raw expressions', () => {

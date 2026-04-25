@@ -1,8 +1,11 @@
-import type { Expr } from '../ast.js';
+import type { Expr, SelectAst } from '../ast.js';
 import { assertSafeQualifiedIdentifier } from '../identifier.js';
 import type { ParamBuffer } from './params.js';
 
 export type PlaceholderStyle = 'postgres' | 'mysql';
+
+/** Callback provided by compileQuery to compile a subquery AST using the shared param buffer. */
+export type SubqueryCompiler = (ast: SelectAst, params: ParamBuffer) => string;
 
 function colFragment(column: string, quoteId: (s: string) => string): string {
   assertSafeQualifiedIdentifier(column, 'column');
@@ -18,6 +21,7 @@ function compileExprInner(
   style: PlaceholderStyle,
   params: ParamBuffer,
   quoteId: (s: string) => string,
+  compileSub: SubqueryCompiler,
 ): string {
   switch (expr.type) {
     case 'eq': {
@@ -92,13 +96,29 @@ function compileExprInner(
       }
       return expr.sql;
     }
+    case 'inSubquery': {
+      const sub = compileSub(expr.query, params);
+      return `${colFragment(expr.column, quoteId)} IN (${sub})`;
+    }
+    case 'notInSubquery': {
+      const sub = compileSub(expr.query, params);
+      return `${colFragment(expr.column, quoteId)} NOT IN (${sub})`;
+    }
+    case 'exists': {
+      const sub = compileSub(expr.query, params);
+      return `EXISTS (${sub})`;
+    }
+    case 'notExists': {
+      const sub = compileSub(expr.query, params);
+      return `NOT EXISTS (${sub})`;
+    }
     case 'and': {
       if (expr.items.length === 0) return 'TRUE';
-      return expr.items.map((e) => `(${compileExprInner(e, style, params, quoteId)})`).join(' AND ');
+      return expr.items.map((e) => `(${compileExprInner(e, style, params, quoteId, compileSub)})`).join(' AND ');
     }
     case 'or': {
       if (expr.items.length === 0) return 'FALSE';
-      return expr.items.map((e) => `(${compileExprInner(e, style, params, quoteId)})`).join(' OR ');
+      return expr.items.map((e) => `(${compileExprInner(e, style, params, quoteId, compileSub)})`).join(' OR ');
     }
     default: {
       const _exhaustive: never = expr;
@@ -116,6 +136,7 @@ export function compileExpr(
   style: PlaceholderStyle,
   params: ParamBuffer,
   quoteId: (s: string) => string,
+  compileSub: SubqueryCompiler,
 ): string {
-  return compileExprInner(expr, style, params, quoteId);
+  return compileExprInner(expr, style, params, quoteId, compileSub);
 }
