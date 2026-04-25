@@ -136,9 +136,39 @@ export class DbClient {
     });
   }
 
-  /** Execute a raw SQL query and return rows typed as T. Use with care — no SQL injection protection. */
-  async sql<T extends Row = Row>(rawSql: string, params: unknown[] = [], signal?: AbortSignal): Promise<T[]> {
-    return withSignal(this.driver.query<T>(rawSql, params), signal);
+  /**
+   * Execute a raw SQL query. Accepts either a tagged template (recommended) or
+   * a plain string + params array.
+   *
+   * Tagged template — dialect-aware, values are never interpolated into the string:
+   *   await db.sql`SELECT * FROM users WHERE id = ${userId}`
+   *
+   * Plain form (use when building SQL programmatically):
+   *   await db.sql('SELECT * FROM users WHERE id = $1', [userId])  // Postgres
+   *   await db.sql('SELECT * FROM users WHERE id = ?', [userId])   // MySQL
+   */
+  sql<T extends Row = Row>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
+  sql<T extends Row = Row>(rawSql: string, params?: unknown[], signal?: AbortSignal): Promise<T[]>;
+  sql<T extends Row = Row>(
+    stringsOrSql: TemplateStringsArray | string,
+    ...rest: unknown[]
+  ): Promise<T[]> {
+    if (typeof stringsOrSql === 'string') {
+      const params = (rest[0] as unknown[] | undefined) ?? [];
+      const signal = rest[1] as AbortSignal | undefined;
+      return withSignal(this.driver.query<T>(stringsOrSql, params), signal);
+    }
+    // Tagged template: build dialect-aware SQL from the template parts and values
+    const strings = stringsOrSql;
+    const values = rest as unknown[];
+    let rawSql = strings[0]!;
+    const params: unknown[] = [];
+    for (let i = 0; i < values.length; i++) {
+      params.push(values[i]);
+      const placeholder = this.driver.dialect === 'postgres' ? `$${params.length}` : '?';
+      rawSql += placeholder + strings[i + 1]!;
+    }
+    return this.driver.query<T>(rawSql, params);
   }
 
   /** Ping the database and return latency + health status. */
