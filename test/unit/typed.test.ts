@@ -72,7 +72,7 @@ describe('TypedClient', () => {
   it('transaction passes a TypedClient to the callback', async () => {
     mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
     const pg = await import('pg');
-    const mockPool = (pg.default.Pool as ReturnType<typeof vi.fn>).mock.results[0]?.value as {
+    const mockPool = (pg.default.Pool as unknown as ReturnType<typeof vi.fn>).mock.results[0]?.value as {
       connect: ReturnType<typeof vi.fn>;
     };
     // mock connect for transaction

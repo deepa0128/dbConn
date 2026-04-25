@@ -36,7 +36,10 @@ describe('parseConnectionUrl', () => {
 
     it('does not set ssl when sslmode=disable', () => {
       const cfg = parseConnectionUrl('postgres://u:p@h/db?sslmode=disable');
-      expect(cfg.ssl).toBeUndefined();
+      expect(cfg.dialect).toBe('postgres');
+      if (cfg.dialect === 'postgres') {
+        expect(cfg.ssl).toBeUndefined();
+      }
     });
 
     it('sets maxConnections from connection_limit', () => {
@@ -79,9 +82,27 @@ describe('parseConnectionUrl', () => {
     });
   });
 
+  describe('mongodb', () => {
+    it('parses a mongodb:// URL', () => {
+      expect(parseConnectionUrl('mongodb://user:pw@localhost:27017/app')).toEqual({
+        dialect: 'mongodb',
+        uri: 'mongodb://user:pw@localhost:27017/app',
+        database: 'app',
+      });
+    });
+
+    it('parses mongodb+srv:// URLs', () => {
+      expect(parseConnectionUrl('mongodb+srv://u:p@cluster0.mongodb.net/mydb')).toEqual({
+        dialect: 'mongodb',
+        uri: 'mongodb+srv://u:p@cluster0.mongodb.net/mydb',
+        database: 'mydb',
+      });
+    });
+  });
+
   describe('errors', () => {
     it('throws TypeError for unsupported scheme', () => {
-      expect(() => parseConnectionUrl('mongodb://localhost/db')).toThrow(TypeError);
+      expect(() => parseConnectionUrl('sqlite:///tmp/app.db')).toThrow(TypeError);
     });
 
     it('throws TypeError for a non-URL string', () => {
