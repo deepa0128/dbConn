@@ -181,18 +181,8 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
       }
     },
 
-    poolMetrics(): PoolMetrics {
-      // mysql2 pool exposes _allConnections, _freeConnections, _connectionQueue
-      const p = pool as unknown as {
-        _allConnections: { length: number };
-        _freeConnections: { length: number };
-        _connectionQueue: { length: number };
-      };
-      return {
-        totalConnections: p._allConnections?.length ?? 0,
-        idleConnections: p._freeConnections?.length ?? 0,
-        waitingRequests: p._connectionQueue?.length ?? 0,
-      };
+    poolMetrics(): null {
+      return null;
     },
 
     async healthCheck(): Promise<HealthStatus> {

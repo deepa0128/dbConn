@@ -21,6 +21,6 @@ export interface SqlDriver {
   execute(sql: string, params: unknown[]): Promise<{ affectedRows: number }>;
   transaction<T>(fn: (tx: SqlDriver) => Promise<T>): Promise<T>;
   healthCheck(): Promise<HealthStatus>;
-  poolMetrics(): PoolMetrics;
+  poolMetrics(): PoolMetrics | null;
   close(): Promise<void>;
 }

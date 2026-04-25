@@ -146,8 +146,8 @@ export class DbClient {
     return this.driver.healthCheck();
   }
 
-  /** Return current connection pool stats (total, idle, waiting). */
-  poolMetrics(): PoolMetrics {
+  /** Return current connection pool stats. Returns null on MySQL (not exposed by mysql2). */
+  poolMetrics(): PoolMetrics | null {
     return this.driver.poolMetrics();
   }
 
