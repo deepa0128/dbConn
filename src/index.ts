@@ -1,5 +1,6 @@
 export { createClient, DbClient } from './client.js';
 export type { ExecuteResult, Row } from './client.js';
+export { TypedClient, TypedSelectBuilder } from './typed.js';
 
 export type { DbConnConfig, DatabaseDialect, MysqlConfig, PostgresConfig, QueryEvent, SslOptions } from './config.js';
 
@@ -41,4 +42,4 @@ export type { Migration } from './migrate.js';
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
 export type { HealthStatus, PoolMetrics } from './driver/types.js';
 
-export type { AggregateColumn, Expr, JoinClause, JoinType, OrderDirection } from './ast.js';
+export type { AggregateColumn, Cte, Expr, JoinClause, JoinType, OrderDirection } from './ast.js';

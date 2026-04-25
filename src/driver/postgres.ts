@@ -116,6 +116,8 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         }
       },
 
+      healthCheck: async () => ({ healthy: true, latencyMs: 0 }),
+      poolMetrics: () => null,
       close: () => Promise.resolve(),
     };
   }

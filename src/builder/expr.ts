@@ -1,5 +1,4 @@
-import type { Expr, Subquery } from '../ast.js';
-import type { SelectBuilder } from './select.js';
+import type { Expr, SelectAst, Subquery } from '../ast.js';
 
 export function eq(column: string, value: unknown): Expr {
   return { type: 'eq', column, value };
@@ -78,8 +77,8 @@ export function rawExpr(sql: string, params?: unknown[]): Expr {
   return { type: 'raw', sql, params };
 }
 
-/** Wrap a SelectBuilder as a subquery for use with inList, notInList, exists, notExists. */
-export function subquery(builder: SelectBuilder): Subquery {
+/** Wrap a builder (or any object with toAst()) as a subquery for use with inList, notInList, exists, notExists. */
+export function subquery(builder: { toAst(): SelectAst }): Subquery {
   return { _brand: 'subquery', ast: builder.toAst() };
 }
 

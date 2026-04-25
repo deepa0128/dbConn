@@ -18,6 +18,15 @@ function compileSelectSql(ast: SelectAst, style: PlaceholderStyle, params: Param
   assertSafeIdentifier(ast.from, 'table');
   const compileSub: SubqueryCompiler = (sub, p) => compileSelectSql(sub, style, p);
 
+  // Compile CTEs first so their params are numbered before the main query's params
+  let ctePrefix = '';
+  if (ast.ctes?.length) {
+    const cteParts = ast.ctes.map(({ name, query }) =>
+      `${q(name)} AS (${compileSelectSql(query, style, params)})`,
+    );
+    ctePrefix = `WITH ${cteParts.join(', ')} `;
+  }
+
   const regularCols =
     ast.columns === '*'
       ? (ast.aggregates?.length ? [] : ['*'])
@@ -73,7 +82,7 @@ function compileSelectSql(ast: SelectAst, style: PlaceholderStyle, params: Param
     sql += ` OFFSET ${ast.offset}`;
   }
 
-  return sql;
+  return ctePrefix + sql;
 }
 
 function compileSelect(ast: SelectAst, style: PlaceholderStyle): CompiledSql {

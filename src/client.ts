@@ -9,6 +9,7 @@ import { SelectBuilder } from './builder/select.js';
 import { UpdateBuilder } from './builder/update.js';
 import { paginate as paginateImpl } from './paginate.js';
 import type { CursorPageOptions, PageResult } from './paginate.js';
+import { TypedClient } from './typed.js';
 
 export type Row = Record<string, unknown>;
 
@@ -183,6 +184,22 @@ export class DbClient {
   /** Return current connection pool stats. Returns null on MySQL (not exposed by mysql2). */
   poolMetrics(): PoolMetrics | null {
     return this.driver.poolMetrics();
+  }
+
+  /**
+   * Run EXPLAIN on a query. Returns raw rows as the database produces them.
+   * Postgres: each row has a `"QUERY PLAN"` column.
+   * MySQL: columns are `id`, `select_type`, `table`, `type`, `key`, etc.
+   */
+  async explain(builder: SelectBuilder): Promise<Row[]> {
+    const ast = builder.toAst();
+    const { sql, params } = compileQuery(ast, this.driver.dialect);
+    return this.driver.query<Row>(`EXPLAIN ${sql}`, params);
+  }
+
+  /** Return a type-safe wrapper that constrains table names to keys of Schema. */
+  withSchema<Schema extends Record<string, Record<string, unknown>>>(): TypedClient<Schema> {
+    return new TypedClient<Schema>(this);
   }
 
   async close(): Promise<void> {

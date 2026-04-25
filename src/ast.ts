@@ -40,10 +40,16 @@ export type JoinClause = {
   on: Expr;
 };
 
+export type Cte = {
+  name: string;
+  query: SelectAst;
+};
+
 export type SelectAst = {
   type: 'select';
   from: string;
   fromAlias?: string;
+  ctes?: Cte[];
   distinct?: boolean;
   columns: string[] | '*';
   aggregates?: AggregateColumn[];

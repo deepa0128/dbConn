@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import type { ResultSetHeader } from 'mysql2/promise';
 import type { MysqlConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
-import type { DriverRow, HealthStatus, PoolMetrics, SqlDriver } from './types.js';
+import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
 import { withRetry } from './retry.js';
 
@@ -140,6 +140,8 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
         }
       },
 
+      healthCheck: async () => ({ healthy: true, latencyMs: 0 }),
+      poolMetrics: () => null,
       close: () => Promise.resolve(),
     };
   }

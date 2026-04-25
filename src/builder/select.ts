@@ -1,4 +1,4 @@
-import type { AggregateColumn, Expr, JoinClause, JoinType, OrderDirection, SelectAst } from '../ast.js';
+import type { AggregateColumn, Cte, Expr, JoinClause, JoinType, OrderDirection, SelectAst } from '../ast.js';
 import { assertSafeIdentifier, assertSafeQualifiedIdentifier } from '../identifier.js';
 
 export class SelectBuilder {
@@ -14,6 +14,13 @@ export class SelectBuilder {
   private order: { column: string; direction: OrderDirection }[] = [];
   private limitN: number | undefined;
   private offsetN: number | undefined;
+  private cteList: Cte[] = [];
+
+  with(name: string, builder: SelectBuilder): this {
+    assertSafeIdentifier(name, 'CTE name');
+    this.cteList.push({ name, query: builder.toAst() });
+    return this;
+  }
 
   from(table: string, alias?: string): this {
     assertSafeIdentifier(table, 'table');
@@ -103,6 +110,7 @@ export class SelectBuilder {
       type: 'select',
       from: this.table,
       fromAlias: this.tableAlias,
+      ctes: this.cteList.length ? this.cteList : undefined,
       distinct: this.isDistinct || undefined,
       columns: this.projection,
       aggregates: this.aggregateList.length ? this.aggregateList : undefined,
