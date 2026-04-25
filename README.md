@@ -1,6 +1,6 @@
 # @dbconn/core
 
-Type-safe query builder and database client for **Postgres** and **MySQL** in Node.js. No raw SQL strings, no code generation, no ORM magic — just a fluent builder that compiles to parameterized SQL at runtime.
+Type-safe query builder and database client for **Postgres**, **MySQL**, and **MongoDB** in Node.js. No ORM magic — just a fluent builder that compiles to dialect-safe operations at runtime.
 
 ## Install
 
@@ -8,7 +8,7 @@ Type-safe query builder and database client for **Postgres** and **MySQL** in No
 npm install @dbconn/core
 ```
 
-`pg` and `mysql2` are bundled as peer dependencies — no separate install needed.
+`pg`, `mysql2`, and `mongodb` are bundled runtime dependencies — no separate install needed.
 
 ---
 
@@ -44,7 +44,7 @@ await db.execute(
 await db.close();
 ```
 
-Switch to MySQL by changing `dialect: 'mysql'` — everything else is identical.
+Switch to MySQL with `dialect: 'mysql'`, or to MongoDB with `dialect: 'mongodb'`.
 
 ---
 
@@ -54,7 +54,7 @@ Switch to MySQL by changing `dialect: 'mysql'` — everything else is identical.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `dialect` | `'postgres' \| 'mysql'` | — | **Required** |
+| `dialect` | `'postgres' \| 'mysql' \| 'mongodb'` | — | **Required** |
 | `host` | `string` | — | **Required** |
 | `port` | `number` | 5432 / 3306 | |
 | `user` | `string` | — | **Required** |
@@ -74,6 +74,11 @@ const db = createClient('postgres://user:pass@host:5432/mydb?ssl=true&connection
 ```
 
 Supported query-string params: `ssl` / `sslmode`, `connection_limit`, `query_timeout`.
+
+For MongoDB URLs (`mongodb://` / `mongodb+srv://`), the parser returns:
+- `dialect: 'mongodb'`
+- `uri`: full connection URI
+- `database`: inferred from path when present
 
 ### SSL options
 
@@ -160,6 +165,19 @@ do {
 ```
 
 More stable than OFFSET under concurrent writes.
+
+---
+
+### MongoDB behavior
+
+MongoDB supports the core query builder flow (`selectFrom` / `where` / `orderBy` / `limit` / `offset`) plus `insertInto`, `updateTable`, and `deleteFrom`.
+
+SQL-only features throw descriptive `DbError`s on MongoDB:
+- `join`, CTEs (`with`), `groupBy`/aggregates/having, and subquery expressions
+- `db.sql()`, `db.explain()`, `db.stream()`, `db.paginate()`, `db.count()`
+- SQL migrations (`migrateUp`/`migrateDown`) and `RETURNING` / `onConflict`
+
+MongoDB `transaction()` uses MongoDB sessions / `withTransaction()` and requires a replica set or mongos deployment.
 
 ---
 

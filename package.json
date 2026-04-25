@@ -1,7 +1,7 @@
 {
   "name": "@dbconn/core",
   "version": "0.4.0",
-  "description": "Universal database connector with dialect-safe query builders (Postgres, MySQL)",
+  "description": "Universal database connector with dialect-safe query builders (Postgres, MySQL, MongoDB)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,7 +17,8 @@
   "files": [
     "dist",
     "CHANGELOG.md",
-    "README.md"
+    "README.md",
+    "docs"
   ],
   "sideEffects": false,
   "scripts": {
@@ -41,11 +42,13 @@
     "database",
     "postgres",
     "mysql",
+    "mongodb",
     "query-builder",
     "sql",
     "typescript"
   ],
   "dependencies": {
+    "mongodb": "^7.2.0",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0"
   },
