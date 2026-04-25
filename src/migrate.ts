@@ -47,7 +47,15 @@ async function removeRecord(client: DbClient, name: string): Promise<void> {
   );
 }
 
-/** Apply all pending migrations in order. Returns names of newly applied migrations. */
+/**
+ * Apply all pending migrations in order. Each migration runs inside its own
+ * transaction — if it throws, the transaction rolls back and the run halts.
+ *
+ * Note: on MySQL, DDL statements (CREATE TABLE, ALTER TABLE, etc.) implicitly
+ * commit and cannot be rolled back, even inside a transaction.
+ *
+ * Returns names of newly applied migrations.
+ */
 export async function migrateUp(client: DbClient, migrations: Migration[]): Promise<string[]> {
   await ensureTable(client);
   const applied = await appliedNames(client);
@@ -55,8 +63,10 @@ export async function migrateUp(client: DbClient, migrations: Migration[]): Prom
   const ran: string[] = [];
 
   for (const migration of pending) {
-    await migration.up(client);
-    await recordApplied(client, migration.name);
+    await client.transaction(async (tx) => {
+      await migration.up(tx);
+      await recordApplied(tx, migration.name);
+    });
     ran.push(migration.name);
   }
 
@@ -65,6 +75,7 @@ export async function migrateUp(client: DbClient, migrations: Migration[]): Prom
 
 /**
  * Roll back the last `steps` applied migrations (default: 1).
+ * Each rollback runs inside its own transaction.
  * Migrations without a `down` function are skipped.
  * Returns names of rolled-back migrations.
  */
@@ -84,8 +95,10 @@ export async function migrateDown(
   const ran: string[] = [];
   for (const migration of toRollback) {
     if (!migration.down) continue;
-    await migration.down(client);
-    await removeRecord(client, migration.name);
+    await client.transaction(async (tx) => {
+      await migration.down!(tx);
+      await removeRecord(tx, migration.name);
+    });
     ran.push(migration.name);
   }
 

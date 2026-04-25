@@ -5,29 +5,22 @@ import type { DbClient } from '../../src/client.js';
 
 function makeClient(dialect: 'postgres' | 'mysql' = 'postgres') {
   const calls: Array<[string, unknown[]]> = [];
-  // applied_names returned from SELECT query
   let storedNames: string[] = [];
 
-  const client = {
+  // transaction() runs the callback with the same client (simplified for unit tests)
+  const client: DbClient & { _getCalls: () => Array<[string, unknown[]]>; _storedNames: () => string[] } = {
     get dialect() { return dialect; },
     sql: vi.fn(async (sql: string, params: unknown[] = []) => {
       calls.push([sql, params]);
-      if (sql.startsWith('SELECT name FROM')) {
-        return storedNames.map((name) => ({ name }));
-      }
-      if (sql.startsWith('INSERT INTO')) {
-        const name = params[0] as string;
-        storedNames.push(name);
-      }
-      if (sql.startsWith('DELETE FROM')) {
-        const name = params[0] as string;
-        storedNames = storedNames.filter((n) => n !== name);
-      }
+      if (sql.startsWith('SELECT name FROM')) return storedNames.map((name) => ({ name }));
+      if (sql.startsWith('INSERT INTO')) storedNames.push(params[0] as string);
+      if (sql.startsWith('DELETE FROM')) storedNames = storedNames.filter((n) => n !== params[0]);
       return [];
     }),
+    transaction: vi.fn(async (fn: (tx: DbClient) => Promise<unknown>) => fn(client)),
     _getCalls: () => calls,
     _storedNames: () => storedNames,
-  } as unknown as DbClient & { _getCalls: () => Array<[string, unknown[]]>; _storedNames: () => string[] };
+  } as unknown as typeof client;
 
   return client;
 }
@@ -51,11 +44,14 @@ describe('migrateUp', () => {
     expect(migrations[1].up).toHaveBeenCalledOnce();
   });
 
+  it('each migration runs inside a transaction', async () => {
+    await migrateUp(client, migrations);
+    expect(client.transaction).toHaveBeenCalledTimes(2);
+  });
+
   it('skips already-applied migrations', async () => {
-    // First run
     await migrateUp(client, migrations);
     vi.clearAllMocks();
-    // Second run — nothing pending
     const ran = await migrateUp(client, migrations);
     expect(ran).toEqual([]);
     expect(migrations[0].up).not.toHaveBeenCalled();
@@ -83,6 +79,14 @@ describe('migrateUp', () => {
     const [firstSql] = mysqlClient._getCalls()[0]!;
     expect(firstSql).toContain('`_dbconn_migrations`');
   });
+
+  it('halts on failure and does not run subsequent migrations', async () => {
+    const boom = new Error('migration failed');
+    const failingMigration: Migration = { name: '001_fail', up: vi.fn().mockRejectedValue(boom) };
+    const nextMigration: Migration = { name: '002_next', up: vi.fn() };
+    await expect(migrateUp(client, [failingMigration, nextMigration])).rejects.toThrow('migration failed');
+    expect(nextMigration.up).not.toHaveBeenCalled();
+  });
 });
 
 describe('migrateDown', () => {
@@ -101,11 +105,18 @@ describe('migrateDown', () => {
     expect(migrations[0].down).not.toHaveBeenCalled();
   });
 
+  it('each rollback runs inside a transaction', async () => {
+    const client = makeClient();
+    const migrations: Migration[] = [{ name: '001', up: vi.fn(), down: vi.fn() }];
+    await migrateUp(client, migrations);
+    vi.clearAllMocks();
+    await migrateDown(client, migrations);
+    expect(client.transaction).toHaveBeenCalledTimes(1);
+  });
+
   it('skips migrations without a down function', async () => {
     const client = makeClient();
-    const migrations: Migration[] = [
-      { name: '001_create_users', up: vi.fn() },
-    ];
+    const migrations: Migration[] = [{ name: '001_create_users', up: vi.fn() }];
     await migrateUp(client, migrations);
     const rolled = await migrateDown(client, migrations);
     expect(rolled).toEqual([]);
@@ -120,7 +131,6 @@ describe('migrateDown', () => {
     ];
     await migrateUp(client, migrations);
     vi.clearAllMocks();
-
     const rolled = await migrateDown(client, migrations, 2);
     expect(rolled).toEqual(['003', '002']);
   });
