@@ -54,9 +54,14 @@ export async function paginate<T extends Row = Row>(
   };
 
   if (client.dialect === 'mongodb') {
-    throw new DbError('paginate() is SQL-only and is not supported for MongoDB');
+    throw new DbError(
+      'db.paginate() is not supported on MongoDB. ' +
+      'For MongoDB, implement pagination using db.fetch() with .limit(n).offset(n) for simple cases, ' +
+      'or db.aggregate(collection, [{ $match: { _id: { $gt: lastId } } }, { $sort: ... }, { $limit: n }]) ' +
+      'for efficient keyset pagination.',
+    );
   }
-  const { sql, params } = compileQuery(pageAst, client.dialect);
+  const { sql, params } = compileQuery(pageAst, client.dialect as 'postgres' | 'mysql');
   const rows = await client.sql<T>(sql, params);
 
   const hasMore = rows.length > limit;

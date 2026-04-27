@@ -48,6 +48,6 @@ export { migrateDown, migrateUp } from './migrate.js';
 export type { Migration } from './migrate.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
-export type { HealthStatus, PoolMetrics } from './driver/types.js';
+export type { DbDriver, HealthStatus, MongoDriver, PoolMetrics, SqlDriver } from './driver/types.js';
 
 export type { AggregateColumn, Cte, Expr, JoinClause, JoinType, OrderDirection } from './ast.js';

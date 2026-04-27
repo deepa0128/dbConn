@@ -38,28 +38,20 @@ export class DbClient {
     this.driver = driver;
   }
 
+  /** The active database dialect: 'postgres', 'mysql', or 'mongodb'. */
   get dialect(): 'postgres' | 'mysql' | 'mongodb' {
     return this.driver.dialect;
   }
 
-  private ensureSqlFeature(feature: string): void {
+  private requireSql(feature: string): SqlDriver {
     if (this.driver.dialect === 'mongodb') {
-      throw new DbError(`${feature} is SQL-only and is not supported for MongoDB`);
+      throw new DbError(`${feature} is not supported on MongoDB. Check db.dialect before calling this method.`);
     }
+    return this.driver as SqlDriver;
   }
 
-  private getSqlDriver(): SqlDriver {
-    if (this.driver.dialect === 'mongodb') {
-      throw new DbError('This operation is SQL-only and is not supported for MongoDB');
-    }
-    return this.driver;
-  }
-
-  private getMongoDriver(): MongoDriver {
-    if (this.driver.dialect !== 'mongodb') {
-      throw new DbError('MongoDB-specific path called for SQL driver');
-    }
-    return this.driver;
+  private get mongoDriver(): MongoDriver {
+    return this.driver as MongoDriver;
   }
 
   selectFrom(table: string): SelectBuilder {
@@ -81,6 +73,9 @@ export class DbClient {
   /**
    * Run a SELECT — or an INSERT/UPDATE/DELETE with a `.returning()` clause —
    * and get the result rows back typed as T.
+   *
+   * Works on all dialects. For MongoDB, unsupported features (JOINs, CTEs, subqueries,
+   * aggregates, DISTINCT) throw a descriptive DbError with the recommended alternative.
    */
   async fetch<T extends Row = Row>(
     builder: SelectBuilder | InsertBuilder | UpdateBuilder | DeleteBuilder,
@@ -88,22 +83,28 @@ export class DbClient {
   ): Promise<T[]> {
     const ast = builder.toAst();
     if (this.driver.dialect === 'mongodb') {
-      return withSignal(this.getMongoDriver().query<T>(ast), signal);
+      return withSignal(this.mongoDriver.query<T>(ast), signal);
     }
-    const sqlDriver = this.getSqlDriver();
+    const sqlDriver = this.driver as SqlDriver;
     const { sql, params } = compileQuery(ast, sqlDriver.dialect);
     return withSignal(sqlDriver.query<T>(sql, params), signal);
   }
 
   /**
-   * Stream a SELECT in batches. Yields rows one at a time without loading the
-   * full result set into memory. Respects any LIMIT set on the builder as a cap.
+   * Stream a SELECT in batches using LIMIT/OFFSET pagination.
+   * Yields rows one at a time without loading the full result into memory.
+   * Respects any LIMIT set on the builder as an overall cap.
+   *
+   * SQL only — not supported on MongoDB. For MongoDB, use db.aggregate() with
+   * a $skip / $limit pipeline or process results from db.fetch() directly.
    */
   async *stream<T extends Row = Row>(
     builder: SelectBuilder,
     batchSize = 100,
   ): AsyncIterable<T> {
-    this.ensureSqlFeature('db.stream()');
+    const sqlDriver = this.requireSql(
+      'db.stream() — use db.aggregate(collection, [{ $skip: N }, { $limit: N }]) for MongoDB cursor-based streaming',
+    );
     const ast = builder.toAst();
     const cap = ast.limit;
     let offset = ast.offset ?? 0;
@@ -115,7 +116,6 @@ export class DbClient {
 
       const limit = Math.min(batchSize, remaining === Infinity ? batchSize : remaining);
       const batchAst = { ...ast, limit, offset };
-      const sqlDriver = this.getSqlDriver();
       const { sql, params } = compileQuery(batchAst, sqlDriver.dialect);
       const rows = await sqlDriver.query<T>(sql, params);
 
@@ -128,23 +128,40 @@ export class DbClient {
     }
   }
 
+  /**
+   * Execute an INSERT, UPDATE, or DELETE and return the number of affected rows.
+   *
+   * Works on all dialects. Note that MongoDB's updateMany returns modifiedCount
+   * (documents actually changed), not matchedCount (documents found by the filter).
+   */
   async execute(
     builder: InsertBuilder | UpdateBuilder | DeleteBuilder,
     signal?: AbortSignal,
   ): Promise<ExecuteResult> {
     const ast = builder.toAst();
     if (this.driver.dialect === 'mongodb') {
-      return withSignal(this.getMongoDriver().execute(ast), signal);
+      return withSignal(this.mongoDriver.execute(ast), signal);
     }
-    const sqlDriver = this.getSqlDriver();
+    const sqlDriver = this.driver as SqlDriver;
     const { sql, params } = compileQuery(ast, sqlDriver.dialect);
     return withSignal(sqlDriver.execute(sql, params), signal);
   }
 
-  /** Return the number of rows matching the builder's WHERE clause. */
+  /**
+   * Return the number of rows (or documents) matching the builder's WHERE clause.
+   *
+   * On SQL dialects: compiles to `SELECT COUNT(*) FROM ...`.
+   * On MongoDB: uses countDocuments(filter) which is efficient on indexed fields.
+   * JOINs, CTEs, and subqueries in the builder are not supported on MongoDB for count.
+   */
   async count(builder: SelectBuilder): Promise<number> {
-    this.ensureSqlFeature('db.count()');
     const ast = builder.toAst();
+
+    if (this.driver.dialect === 'mongodb') {
+      return this.mongoDriver.count(ast);
+    }
+
+    const sqlDriver = this.driver as SqlDriver;
     const countAst = {
       ...ast,
       columns: [] as string[],
@@ -153,37 +170,51 @@ export class DbClient {
       limit: undefined,
       offset: undefined,
     };
-    const sqlDriver = this.getSqlDriver();
     const { sql, params } = compileQuery(countAst, sqlDriver.dialect);
     const rows = await sqlDriver.query<{ __n: string | number }>(sql, params);
     return Number(rows[0]?.__n ?? 0);
   }
 
-  /** Fetch one page using keyset (cursor) pagination. */
+  /**
+   * Fetch one page using keyset (cursor) pagination.
+   * Stable under concurrent writes; more efficient than LIMIT/OFFSET on large tables.
+   *
+   * SQL only — not supported on MongoDB. For MongoDB, use db.aggregate() with
+   * $match and $sort to implement cursor-based pagination, or use skip/limit via db.fetch().
+   */
   async paginate<T extends Row = Row>(
     builder: SelectBuilder,
     options: CursorPageOptions,
   ): Promise<PageResult<T>> {
-    this.ensureSqlFeature('db.paginate()');
+    this.requireSql(
+      'db.paginate() — for MongoDB, implement pagination using db.fetch() with .limit(n).offset(n) ' +
+      'or db.aggregate() with $match / $sort for keyset pagination',
+    );
     return paginateImpl<T>(this, builder, options);
   }
 
+  /**
+   * Wrap a set of operations in a database transaction.
+   *
+   * On SQL dialects: uses BEGIN / COMMIT / ROLLBACK. Nested calls use SAVEPOINTs.
+   * On MongoDB: uses a multi-document transaction session. Requires the MongoDB server
+   * to be running as a replica set or sharded cluster. Nested calls throw DbError.
+   *
+   * The callback receives a new DbClient bound to the transaction connection (SQL) or
+   * session (MongoDB). All operations inside must go through this tx client.
+   */
   async transaction<T>(fn: (tx: DbClient) => Promise<T>): Promise<T> {
     if (this.driver.dialect === 'mongodb') {
-      return this.driver.transaction(async (txDriver) => {
-        const txClient = new DbClient(txDriver);
-        return fn(txClient);
-      });
+      return this.mongoDriver.transaction(async (txDriver) => fn(new DbClient(txDriver)));
     }
-    return this.driver.transaction(async (txDriver) => {
-      const txClient = new DbClient(txDriver);
-      return fn(txClient);
-    });
+    return (this.driver as SqlDriver).transaction(async (txDriver) => fn(new DbClient(txDriver)));
   }
 
   /**
    * Execute a raw SQL query. Accepts either a tagged template (recommended) or
    * a plain string + params array.
+   *
+   * SQL only — not available on MongoDB. Use db.aggregate(collection, pipeline) instead.
    *
    * Tagged template — dialect-aware, values are never interpolated into the string:
    *   await db.sql`SELECT * FROM users WHERE id = ${userId}`
@@ -198,11 +229,13 @@ export class DbClient {
     stringsOrSql: TemplateStringsArray | string,
     ...rest: unknown[]
   ): Promise<T[]> {
-    this.ensureSqlFeature('db.sql()');
+    const sqlDriver = this.requireSql(
+      'db.sql() — use db.aggregate(collection, pipeline) to run raw MongoDB operations',
+    );
     if (typeof stringsOrSql === 'string') {
       const params = (rest[0] as unknown[] | undefined) ?? [];
       const signal = rest[1] as AbortSignal | undefined;
-      return withSignal(this.getSqlDriver().query<T>(stringsOrSql, params), signal);
+      return withSignal(sqlDriver.query<T>(stringsOrSql, params), signal);
     }
     // Tagged template: build dialect-aware SQL from the template parts and values
     const strings = stringsOrSql;
@@ -211,36 +244,72 @@ export class DbClient {
     const params: unknown[] = [];
     for (let i = 0; i < values.length; i++) {
       params.push(values[i]);
-      const placeholder = this.getSqlDriver().dialect === 'postgres' ? `$${params.length}` : '?';
+      const placeholder = sqlDriver.dialect === 'postgres' ? `$${params.length}` : '?';
       rawSql += placeholder + strings[i + 1]!;
     }
-    return this.getSqlDriver().query<T>(rawSql, params);
+    return sqlDriver.query<T>(rawSql, params);
   }
 
-  /** Ping the database and return latency + health status. */
+  /**
+   * Run a raw MongoDB aggregation pipeline on the named collection.
+   *
+   * MongoDB only — throws DbError on SQL dialects. This is the primary escape hatch
+   * for operations not expressible via the query builder:
+   *
+   *   JOINs      → { $lookup: { from, localField, foreignField, as } }
+   *   GROUP BY   → { $group: { _id: "$field", total: { $sum: "$amount" } } }
+   *   CTEs       → { $facet: { branch1: [...], branch2: [...] } }
+   *   Upserts    → { $merge: { into, on, whenMatched, whenNotMatched } }
+   *
+   * Example:
+   *   const result = await db.aggregate('orders', [
+   *     { $match: { status: 'shipped' } },
+   *     { $group: { _id: '$customerId', total: { $sum: '$amount' } } },
+   *     { $sort: { total: -1 } },
+   *   ]);
+   */
+  async aggregate<T extends Row = Row>(collection: string, pipeline: unknown[]): Promise<T[]> {
+    if (this.driver.dialect !== 'mongodb') {
+      throw new DbError(
+        `db.aggregate() is only available for MongoDB connections. ` +
+        `This client is using dialect "${this.driver.dialect}". ` +
+        `Use db.sql() or the query builder for SQL operations.`,
+      );
+    }
+    return this.mongoDriver.aggregate<T>(collection, pipeline);
+  }
+
+  /** Ping the database and return latency + health status. Works on all dialects. */
   async healthCheck(): Promise<HealthStatus> {
     return this.driver.healthCheck();
   }
 
-  /** Return current connection pool stats. Returns null on MySQL (not exposed by mysql2). */
+  /**
+   * Return current connection pool stats.
+   * Returns null on MySQL (mysql2 does not expose pool internals) and MongoDB.
+   */
   poolMetrics(): PoolMetrics | null {
     return this.driver.poolMetrics();
   }
 
   /**
-   * Run EXPLAIN on a query. Returns raw rows as the database produces them.
+   * Run EXPLAIN on a SELECT query and return the raw plan rows.
    * Postgres: each row has a `"QUERY PLAN"` column.
    * MySQL: columns are `id`, `select_type`, `table`, `type`, `key`, etc.
+   *
+   * SQL only — not supported on MongoDB. Use the MongoDB Compass query analyzer
+   * or db.aggregate(collection, pipeline) with an explain option for query analysis.
    */
   async explain(builder: SelectBuilder): Promise<Row[]> {
-    this.ensureSqlFeature('db.explain()');
+    const sqlDriver = this.requireSql(
+      'db.explain() — use the MongoDB Compass query analyzer or call collection.find(filter).explain() via the native MongoDB driver',
+    );
     const ast = builder.toAst();
-    const sqlDriver = this.getSqlDriver();
     const { sql, params } = compileQuery(ast, sqlDriver.dialect);
     return sqlDriver.query<Row>(`EXPLAIN ${sql}`, params);
   }
 
-  /** Return a type-safe wrapper that constrains table names to keys of Schema. */
+  /** Return a type-safe wrapper that constrains table and column names to keys of Schema. */
   withSchema<Schema extends Record<string, Record<string, unknown>>>(): TypedClient<Schema> {
     return new TypedClient<Schema>(this);
   }

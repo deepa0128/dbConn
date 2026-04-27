@@ -40,12 +40,18 @@ export type CompiledMongoQuery =
   | CompiledMongoUpdate
   | CompiledMongoDelete;
 
-function unsupported(feature: string): never {
-  throw new DbError(`${feature} is SQL-only and is not supported for MongoDB`);
-}
-
-function stripLikeWildcards(pattern: string): string {
-  return pattern.replaceAll('%', '');
+/**
+ * Convert a SQL LIKE pattern to a JavaScript RegExp.
+ *   %  →  .* (any sequence of characters)
+ *   _  →  .  (any single character)
+ * All regex metacharacters in the pattern are escaped before substitution.
+ */
+function sqlLikeToRegex(pattern: string, caseInsensitive: boolean): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex metacharacters (not % or _)
+    .replace(/%/g, '.*')                   // SQL % → any sequence
+    .replace(/_/g, '.');                   // SQL _ → any single char
+  return new RegExp(`^${escaped}$`, caseInsensitive ? 'i' : '');
 }
 
 function exprToMongo(expr: Expr): MongoFilter {
@@ -65,7 +71,7 @@ function exprToMongo(expr: Expr): MongoFilter {
     case 'and':
       return expr.items.length === 0 ? {} : { $and: expr.items.map(exprToMongo) };
     case 'or':
-      return expr.items.length === 0 ? { $expr: false } : { $or: expr.items.map(exprToMongo) };
+      return expr.items.length === 0 ? { $expr: { $eq: [1, 0] } } : { $or: expr.items.map(exprToMongo) };
     case 'in':
       if (expr.values.length === 0) throw new RangeError('in list must not be empty');
       return { [expr.column]: { $in: expr.values } };
@@ -73,11 +79,12 @@ function exprToMongo(expr: Expr): MongoFilter {
       if (expr.values.length === 0) throw new RangeError('notIn list must not be empty');
       return { [expr.column]: { $nin: expr.values } };
     case 'like':
-      return { [expr.column]: { $regex: stripLikeWildcards(expr.pattern) } };
+      return { [expr.column]: sqlLikeToRegex(expr.pattern, false) };
     case 'notLike':
-      return { [expr.column]: { $not: { $regex: stripLikeWildcards(expr.pattern) } } };
+      return { [expr.column]: { $not: sqlLikeToRegex(expr.pattern, false) } };
     case 'ilike':
-      return { [expr.column]: { $regex: stripLikeWildcards(expr.pattern), $options: 'i' } };
+      // ilike is case-insensitive LIKE — compile to regex with /i flag
+      return { [expr.column]: sqlLikeToRegex(expr.pattern, true) };
     case 'between':
       return { [expr.column]: { $gte: expr.low, $lte: expr.high } };
     case 'isNull':
@@ -85,15 +92,22 @@ function exprToMongo(expr: Expr): MongoFilter {
     case 'isNotNull':
       return { [expr.column]: { $ne: null } };
     case 'raw':
-      unsupported('rawExpr');
+      throw new DbError(
+        'rawExpr() is not supported on MongoDB. ' +
+        'Use db.aggregate(collection, pipeline) to pass raw MongoDB query stages.',
+      );
     case 'inSubquery':
-      unsupported('Subqueries');
     case 'notInSubquery':
-      unsupported('Subqueries');
+      throw new DbError(
+        'Subquery expressions (inList with a subquery) are not supported on MongoDB. ' +
+        'Use db.aggregate(collection, [{ $lookup: {...} }, { $match: {...} }]) for cross-collection filtering.',
+      );
     case 'exists':
-      unsupported('EXISTS');
     case 'notExists':
-      unsupported('NOT EXISTS');
+      throw new DbError(
+        'EXISTS / NOT EXISTS subqueries are not supported on MongoDB. ' +
+        'Use db.aggregate(collection, [{ $lookup: {...} }, { $match: {...} }]) for existence checks across collections.',
+      );
     default: {
       const exhaustive: never = expr;
       return exhaustive;
@@ -102,13 +116,49 @@ function exprToMongo(expr: Expr): MongoFilter {
 }
 
 function compileSelect(ast: SelectAst): CompiledMongoSelect {
-  if (ast.ctes?.length) unsupported('CTEs');
-  if (ast.joins?.length) unsupported('JOINs');
-  if (ast.groupBy?.length) unsupported('GROUP BY');
-  if (ast.having) unsupported('HAVING');
-  if (ast.aggregates?.length) unsupported('Aggregates');
-  if (ast.distinct) unsupported('DISTINCT');
-  if (ast.fromAlias) unsupported('Aliases');
+  if (ast.ctes?.length) {
+    throw new DbError(
+      'CTEs (WITH ... AS) are not supported on MongoDB. ' +
+      'Break the query into separate db.fetch() calls, or use db.aggregate(collection, [{ $facet: {...} }]) for multi-branch pipelines.',
+    );
+  }
+  if (ast.joins?.length) {
+    throw new DbError(
+      'JOINs are not supported on MongoDB. ' +
+      'Use db.aggregate(collection, [{ $lookup: { from, localField, foreignField, as } }]) for cross-collection queries.',
+    );
+  }
+  if (ast.groupBy?.length) {
+    throw new DbError(
+      'GROUP BY is not supported on MongoDB. ' +
+      'Use db.aggregate(collection, [{ $group: { _id: "$field", total: { $sum: "$amount" } } }]) for grouping.',
+    );
+  }
+  if (ast.having) {
+    throw new DbError(
+      'HAVING is not supported on MongoDB. ' +
+      'Use db.aggregate(collection, [{ $group: ... }, { $match: ... }]) to filter after grouping.',
+    );
+  }
+  if (ast.aggregates?.length) {
+    throw new DbError(
+      'SQL aggregate functions (COUNT, SUM, AVG, MIN, MAX) are not supported on MongoDB via the query builder. ' +
+      'Use db.aggregate(collection, [{ $group: { _id: null, total: { $sum: "$amount" } } }]) for aggregations. ' +
+      'For document counts use db.count(builder) which calls countDocuments internally.',
+    );
+  }
+  if (ast.distinct) {
+    throw new DbError(
+      'DISTINCT is not supported on MongoDB. ' +
+      'Use db.aggregate(collection, [{ $group: { _id: "$field" } }]) for deduplication.',
+    );
+  }
+  if (ast.fromAlias) {
+    throw new DbError(
+      'Table aliases are not supported on MongoDB. ' +
+      'MongoDB collections are referenced by name directly; aliases are only meaningful in SQL JOIN contexts.',
+    );
+  }
 
   const projection =
     ast.columns === '*'
@@ -116,8 +166,8 @@ function compileSelect(ast: SelectAst): CompiledMongoSelect {
       : Object.fromEntries(ast.columns.map((column) => [column, 1 as const]));
   const sort: MongoSort | undefined = ast.orderBy?.length
     ? Object.fromEntries(
-      ast.orderBy.map(({ column, direction }) => [column, direction === 'asc' ? 1 as const : -1 as const]),
-    )
+        ast.orderBy.map(({ column, direction }) => [column, direction === 'asc' ? (1 as const) : (-1 as const)]),
+      )
     : undefined;
 
   return {
@@ -132,8 +182,19 @@ function compileSelect(ast: SelectAst): CompiledMongoSelect {
 }
 
 function compileInsert(ast: InsertAst): CompiledMongoInsert {
-  if (ast.onConflict) unsupported('onConflict');
-  if (ast.returning) unsupported('RETURNING');
+  if (ast.onConflict) {
+    throw new DbError(
+      'ON CONFLICT (upsert) is not supported on MongoDB via the query builder. ' +
+      'For upserts use db.aggregate(collection, [{ $merge: { into, on, whenMatched, whenNotMatched } }]), ' +
+      'or the native MongoDB driver\'s replaceOne / updateOne with { upsert: true }.',
+    );
+  }
+  if (ast.returning) {
+    throw new DbError(
+      'RETURNING is not supported on MongoDB. ' +
+      'Query the collection separately after the insert, or use the native MongoDB driver\'s insertOne which returns the inserted _id.',
+    );
+  }
   return {
     kind: 'insert',
     collection: ast.into,
@@ -142,7 +203,13 @@ function compileInsert(ast: InsertAst): CompiledMongoInsert {
 }
 
 function compileUpdate(ast: UpdateAst): CompiledMongoUpdate {
-  if (ast.returning) unsupported('RETURNING');
+  if (ast.returning) {
+    throw new DbError(
+      'RETURNING is not supported on MongoDB. ' +
+      'Use db.aggregate(collection, [{ $match: filter }]) to read updated documents separately, ' +
+      'or the native MongoDB driver\'s findOneAndUpdate which returns the document before or after the update.',
+    );
+  }
   return {
     kind: 'update',
     collection: ast.table,
@@ -152,7 +219,12 @@ function compileUpdate(ast: UpdateAst): CompiledMongoUpdate {
 }
 
 function compileDelete(ast: DeleteAst): CompiledMongoDelete {
-  if (ast.returning) unsupported('RETURNING');
+  if (ast.returning) {
+    throw new DbError(
+      'RETURNING is not supported on MongoDB. ' +
+      'Use the native MongoDB driver\'s findOneAndDelete to retrieve the document before deleting it.',
+    );
+  }
   return {
     kind: 'delete',
     collection: ast.from,
