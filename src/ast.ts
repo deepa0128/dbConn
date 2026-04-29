@@ -23,7 +23,8 @@ export type Expr =
   | { type: 'inSubquery'; column: string; query: SelectAst }
   | { type: 'notInSubquery'; column: string; query: SelectAst }
   | { type: 'exists'; query: SelectAst }
-  | { type: 'notExists'; query: SelectAst };
+  | { type: 'notExists'; query: SelectAst }
+  | { type: 'not'; expr: Expr };
 
 export type AggregateColumn = {
   fn: 'count' | 'sum' | 'avg' | 'min' | 'max';

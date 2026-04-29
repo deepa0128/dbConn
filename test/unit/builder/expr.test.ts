@@ -13,6 +13,7 @@ import {
   lt,
   lte,
   ne,
+  not,
   notInList,
   notLike,
   or,
@@ -81,5 +82,14 @@ describe('expression helpers', () => {
       expect(expr.items).toHaveLength(2);
       expect(expr.items[0]).toEqual(and(eq('a', 1), eq('b', 2)));
     }
+  });
+
+  it('not wraps an expression', () => {
+    expect(not(eq('active', true))).toEqual({ type: 'not', expr: eq('active', true) });
+  });
+
+  it('not can wrap compound expressions', () => {
+    const inner = or(eq('role', 'admin'), eq('role', 'mod'));
+    expect(not(inner)).toEqual({ type: 'not', expr: inner });
   });
 });

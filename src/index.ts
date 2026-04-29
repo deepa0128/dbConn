@@ -1,6 +1,6 @@
-export { createClient, DbClient } from './client.js';
+export { createClient, createClientFromEnv, DbClient } from './client.js';
 export type { ExecuteResult, Row } from './client.js';
-export { TypedClient, TypedSelectBuilder } from './typed.js';
+export { TypedClient, TypedSelectBuilder, TypedInsertBuilder, TypedUpdateBuilder, TypedDeleteBuilder } from './typed.js';
 
 export type {
   DbConnConfig,
@@ -32,6 +32,7 @@ export {
   lt,
   lte,
   ne,
+  not,
   notExists,
   notInList,
   notLike,
@@ -44,8 +45,8 @@ export type { Subquery } from './ast.js';
 export { assertSafeIdentifier } from './identifier.js';
 export { parseConnectionUrl } from './parseUrl.js';
 export type { CursorPageOptions, PageResult } from './paginate.js';
-export { migrateDown, migrateUp } from './migrate.js';
-export type { Migration } from './migrate.js';
+export { migrateDown, migrateUp, migrateStatus } from './migrate.js';
+export type { Migration, MigrationStatus } from './migrate.js';
 
 export { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from './errors.js';
 export type { DbDriver, HealthStatus, MongoDriver, PoolMetrics, SqlDriver } from './driver/types.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { withRetry } from '../../src/driver/retry.js';
-import { ConnectionError, DbError } from '../../src/errors.js';
+import { ConnectionError, DbError, QueryTimeoutError } from '../../src/errors.js';
 
 // Use delay=0 throughout so tests don't need fake timers.
 
@@ -30,6 +30,22 @@ describe('withRetry', () => {
   it('does not retry on non-ConnectionError', async () => {
     const fn = vi.fn().mockRejectedValue(new DbError('syntax error'));
     await expect(withRetry(fn, 3, 0)).rejects.toBeInstanceOf(DbError);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses custom shouldRetry predicate', async () => {
+    const timeout = new QueryTimeoutError('timeout');
+    const fn = vi.fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValue('ok');
+    const shouldRetry = (err: unknown) => err instanceof QueryTimeoutError;
+    expect(await withRetry(fn, 2, 0, shouldRetry)).toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry QueryTimeoutError with default predicate', async () => {
+    const fn = vi.fn().mockRejectedValue(new QueryTimeoutError('timeout'));
+    await expect(withRetry(fn, 3, 0)).rejects.toBeInstanceOf(QueryTimeoutError);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });

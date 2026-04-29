@@ -82,6 +82,18 @@ export class SelectBuilder {
     return this;
   }
 
+  /** AND the given expression into any existing WHERE clause. */
+  andWhere(expr: Expr): this {
+    this.whereExpr = this.whereExpr ? { type: 'and', items: [this.whereExpr, expr] } : expr;
+    return this;
+  }
+
+  /** OR the given expression into any existing WHERE clause. */
+  orWhere(expr: Expr): this {
+    this.whereExpr = this.whereExpr ? { type: 'or', items: [this.whereExpr, expr] } : expr;
+    return this;
+  }
+
   orderBy(column: string, direction: OrderDirection = 'asc'): this {
     assertSafeIdentifier(column, 'column');
     this.order.push({ column, direction });

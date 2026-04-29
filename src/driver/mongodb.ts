@@ -2,8 +2,9 @@ import { MongoClient } from 'mongodb';
 import type { ClientSession } from 'mongodb';
 import type { DeleteAst, InsertAst, QueryAst, SelectAst, UpdateAst } from '../ast.js';
 import type { MongoDbConfig } from '../config.js';
-import { ConnectionError, ConstraintError, DbError } from '../errors.js';
+import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
 import { compileMongoQuery } from '../dialect/compileMongo.js';
+import type { CompiledMongoSelect } from '../dialect/compileMongo.js';
 import { notifyQuery } from './notify.js';
 import { withRetry } from './retry.js';
 import type { DriverRow, MongoDriver } from './types.js';
@@ -50,6 +51,7 @@ function makeDriver(
   maxRetries: number,
   retryDelayMs: number,
   session?: ClientSession,
+  shouldRetry?: (err: unknown) => boolean,
 ): MongoDriver {
   const connected = { value: false };
 
@@ -83,7 +85,7 @@ function makeDriver(
         notifyQuery(config.onQuery, { sql: label, params: [], durationMs: Date.now() - start, error: err });
         throw err;
       }
-    }, maxRetries, retryDelayMs);
+    }, maxRetries, retryDelayMs, shouldRetry);
   }
 
   async function runQuery<T extends DriverRow>(ast: QueryAst): Promise<T[]> {
@@ -165,6 +167,59 @@ function makeDriver(
     return result as T[];
   }
 
+  async function runExplain(ast: SelectAst): Promise<DriverRow[]> {
+    const raw = compileMongoQuery(ast);
+    if (raw.kind !== 'select') {
+      throw new DbError('db.explain() only accepts SELECT queries on MongoDB.');
+    }
+    const compiled = raw as CompiledMongoSelect;
+    const db = getDb();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cursor = db.collection(compiled.collection).find(compiled.filter as any, { session });
+    if (compiled.projection) cursor.project(compiled.projection);
+    if (compiled.sort) cursor.sort(compiled.sort);
+    if (compiled.skip !== undefined) cursor.skip(compiled.skip);
+    if (compiled.limit !== undefined) cursor.limit(compiled.limit);
+    const plan = await cursor.explain('executionStats');
+    return [plan as unknown as DriverRow];
+  }
+
+  async function runListCollections(): Promise<string[]> {
+    const db = getDb();
+    const collections = await db.listCollections({}, { nameOnly: true }).toArray();
+    return collections.map((c) => c.name).sort();
+  }
+
+  function makeStreamIterable<T extends DriverRow>(ast: SelectAst, batchSize: number): AsyncIterable<T> {
+    const raw = compileMongoQuery(ast);
+    if (raw.kind !== 'select') {
+      throw new DbError(
+        'db.stream() only accepts SELECT queries on MongoDB. ' +
+        'Use db.execute() for insert, update, and delete operations.',
+      );
+    }
+    const compiled = raw as CompiledMongoSelect;
+
+    async function* gen(): AsyncGenerator<T> {
+      await ensureConnected();
+      const db = getDb();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cursor = db.collection<T>(compiled.collection).find(compiled.filter as any, { session });
+      cursor.batchSize(batchSize);
+      if (compiled.projection) cursor.project(compiled.projection);
+      if (compiled.sort) cursor.sort(compiled.sort);
+      if (compiled.skip !== undefined) cursor.skip(compiled.skip);
+      if (compiled.limit !== undefined) cursor.limit(compiled.limit);
+      try {
+        for await (const doc of cursor) yield doc as T;
+      } finally {
+        await cursor.close().catch(() => {});
+      }
+    }
+
+    return gen();
+  }
+
   const driver: MongoDriver = {
     dialect: 'mongodb',
 
@@ -196,6 +251,32 @@ function makeDriver(
     async aggregate<T extends DriverRow = DriverRow>(collection: string, pipeline: unknown[]): Promise<T[]> {
       try {
         return await withNotify(`[mongodb:aggregate:${collection}]`, () => runAggregate<T>(collection, pipeline));
+      } catch (err) {
+        return normalizeError(err);
+      }
+    },
+
+    stream<T extends DriverRow = DriverRow>(ast: SelectAst, batchSize = 100): AsyncIterable<T> {
+      return makeStreamIterable<T>(ast, batchSize);
+    },
+
+    async explain(ast: SelectAst): Promise<DriverRow[]> {
+      try {
+        return await withNotify(`[mongodb:explain:${ast.from}]`, async () => {
+          await ensureConnected();
+          return runExplain(ast);
+        });
+      } catch (err) {
+        return normalizeError(err);
+      }
+    },
+
+    async listTables(): Promise<string[]> {
+      try {
+        return await withNotify('[mongodb:listCollections]', async () => {
+          await ensureConnected();
+          return runListCollections();
+        });
       } catch (err) {
         return normalizeError(err);
       }
@@ -277,5 +358,8 @@ export function createMongoDriver(config: MongoDbConfig): MongoDriver {
   });
   const maxRetries = config.maxRetries ?? 0;
   const retryDelayMs = config.retryDelayMs ?? 100;
-  return makeDriver(client, config.database, config, maxRetries, retryDelayMs);
+  const shouldRetry = config.retryTransientTimeouts
+    ? (err: unknown) => err instanceof ConnectionError || err instanceof QueryTimeoutError
+    : undefined;
+  return makeDriver(client, config.database, config, maxRetries, retryDelayMs, undefined, shouldRetry);
 }

@@ -91,3 +91,8 @@ export function exists(sq: Subquery): Expr {
 export function notExists(sq: Subquery): Expr {
   return { type: 'notExists', query: sq.ast };
 }
+
+/** Negate any expression: NOT (expr). */
+export function not(expr: Expr): Expr {
+  return { type: 'not', expr };
+}

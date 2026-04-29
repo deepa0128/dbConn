@@ -1,4 +1,4 @@
-import type { DeleteAst, InsertAst, QueryAst, UpdateAst } from '../ast.js';
+import type { DeleteAst, InsertAst, QueryAst, SelectAst, UpdateAst } from '../ast.js';
 
 export type DriverRow = Record<string, unknown>;
 
@@ -28,6 +28,7 @@ export interface SqlDriver {
   transaction<T>(fn: (tx: SqlDriver) => Promise<T>): Promise<T>;
   healthCheck(): Promise<HealthStatus>;
   poolMetrics(): PoolMetrics | null;
+  listTables(): Promise<string[]>;
   close(): Promise<void>;
 }
 
@@ -61,6 +62,9 @@ export interface MongoDriver {
    *   - Upserts → use $merge
    */
   aggregate<T extends DriverRow = DriverRow>(collection: string, pipeline: unknown[]): Promise<T[]>;
+  stream<T extends DriverRow = DriverRow>(ast: SelectAst, batchSize?: number): AsyncIterable<T>;
+  explain(ast: SelectAst): Promise<DriverRow[]>;
+  listTables(): Promise<string[]>;
   transaction<T>(fn: (tx: MongoDriver) => Promise<T>): Promise<T>;
   healthCheck(): Promise<HealthStatus>;
   poolMetrics(): PoolMetrics | null;

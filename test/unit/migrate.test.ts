@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { migrateDown, migrateUp } from '../../src/migrate.js';
+import { migrateDown, migrateStatus, migrateUp } from '../../src/migrate.js';
 import type { Migration } from '../../src/migrate.js';
 import type { DbClient } from '../../src/client.js';
 
@@ -86,6 +86,57 @@ describe('migrateUp', () => {
     const nextMigration: Migration = { name: '002_next', up: vi.fn() };
     await expect(migrateUp(client, [failingMigration, nextMigration])).rejects.toThrow('migration failed');
     expect(nextMigration.up).not.toHaveBeenCalled();
+  });
+});
+
+describe('migrateStatus', () => {
+  it('returns all as pending when none applied', async () => {
+    const client = makeClient();
+    const migrations: Migration[] = [
+      { name: '001', up: vi.fn() },
+      { name: '002', up: vi.fn() },
+    ];
+    const status = await migrateStatus(client, migrations);
+    expect(status.applied).toEqual([]);
+    expect(status.pending).toEqual(['001', '002']);
+  });
+
+  it('returns correct split after partial apply', async () => {
+    const client = makeClient();
+    const migrations: Migration[] = [
+      { name: '001', up: vi.fn() },
+      { name: '002', up: vi.fn() },
+    ];
+    await migrateUp(client, [migrations[0]!]);
+    const status = await migrateStatus(client, migrations);
+    expect(status.applied).toEqual(['001']);
+    expect(status.pending).toEqual(['002']);
+  });
+
+  it('returns all applied when everything is run', async () => {
+    const client = makeClient();
+    const migrations: Migration[] = [
+      { name: '001', up: vi.fn() },
+      { name: '002', up: vi.fn() },
+    ];
+    await migrateUp(client, migrations);
+    const status = await migrateStatus(client, migrations);
+    expect(status.applied).toEqual(['001', '002']);
+    expect(status.pending).toEqual([]);
+  });
+});
+
+describe('migrateUp dry-run', () => {
+  it('returns pending names without running apply', async () => {
+    const client = makeClient();
+    const upFn = vi.fn();
+    const migrations: Migration[] = [{ name: '001', up: upFn }];
+    const ran = await migrateUp(client, migrations, { dryRun: true });
+    expect(ran).toEqual(['001']);
+    expect(upFn).toHaveBeenCalledOnce();
+    // The migration table should still show it as pending afterward
+    const status = await migrateStatus(client, migrations);
+    expect(status.pending).toEqual(['001']);
   });
 });
 

@@ -7,6 +7,140 @@ import { DeleteBuilder } from './builder/delete.js';
 import type { CursorPageOptions, PageResult } from './paginate.js';
 import type { HealthStatus, PoolMetrics } from './driver/types.js';
 
+// ---------------------------------------------------------------------------
+// Typed insert builder
+// ---------------------------------------------------------------------------
+
+export class TypedInsertBuilder<T extends Record<string, unknown>> {
+  constructor(
+    private readonly builder: InsertBuilder,
+    private readonly client: DbClient,
+  ) {}
+
+  columns(...cols: (keyof T & string)[]): this {
+    this.builder.columns(...cols);
+    return this;
+  }
+
+  values(row: Partial<T>): this {
+    this.builder.values(row as Record<string, unknown>);
+    return this;
+  }
+
+  onConflictDoNothing(targets?: (keyof T & string)[]): this {
+    this.builder.onConflictDoNothing(targets);
+    return this;
+  }
+
+  onConflictDoUpdate(targets: (keyof T & string)[], updateColumns: (keyof T & string)[]): this {
+    this.builder.onConflictDoUpdate(targets, updateColumns);
+    return this;
+  }
+
+  returning(...cols: (keyof T & string)[]): this {
+    if (cols.length === 0) return this;
+    this.builder.returning(...(cols as [string, ...string[]]));
+    return this;
+  }
+
+  execute(signal?: AbortSignal): Promise<ExecuteResult> {
+    return this.client.execute(this.builder, signal);
+  }
+
+  fetch<R extends Row = Row>(signal?: AbortSignal): Promise<R[]> {
+    return this.client.fetch<R>(this.builder, signal);
+  }
+
+  fetchOne<R extends Row = Row>(signal?: AbortSignal): Promise<R | undefined> {
+    return this.client.fetchOne<R>(this.builder, signal);
+  }
+
+  toAst() {
+    return this.builder.toAst();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Typed update builder
+// ---------------------------------------------------------------------------
+
+export class TypedUpdateBuilder<T extends Record<string, unknown>> {
+  constructor(
+    private readonly builder: UpdateBuilder,
+    private readonly client: DbClient,
+  ) {}
+
+  set<K extends keyof T & string>(column: K, value: T[K]): this {
+    this.builder.set(column, value as unknown);
+    return this;
+  }
+
+  where(expr: Expr): this {
+    this.builder.where(expr);
+    return this;
+  }
+
+  returning(...cols: (keyof T & string)[]): this {
+    if (cols.length === 0) return this;
+    this.builder.returning(...(cols as [string, ...string[]]));
+    return this;
+  }
+
+  execute(signal?: AbortSignal): Promise<ExecuteResult> {
+    return this.client.execute(this.builder, signal);
+  }
+
+  fetch<R extends Row = Row>(signal?: AbortSignal): Promise<R[]> {
+    return this.client.fetch<R>(this.builder, signal);
+  }
+
+  fetchOne<R extends Row = Row>(signal?: AbortSignal): Promise<R | undefined> {
+    return this.client.fetchOne<R>(this.builder, signal);
+  }
+
+  toAst() {
+    return this.builder.toAst();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Typed delete builder
+// ---------------------------------------------------------------------------
+
+export class TypedDeleteBuilder<T extends Record<string, unknown>> {
+  constructor(
+    private readonly builder: DeleteBuilder,
+    private readonly client: DbClient,
+  ) {}
+
+  where(expr: Expr): this {
+    this.builder.where(expr);
+    return this;
+  }
+
+  returning(...cols: (keyof T & string)[]): this {
+    if (cols.length === 0) return this;
+    this.builder.returning(...(cols as [string, ...string[]]));
+    return this;
+  }
+
+  execute(signal?: AbortSignal): Promise<ExecuteResult> {
+    return this.client.execute(this.builder, signal);
+  }
+
+  fetch<R extends Row = Row>(signal?: AbortSignal): Promise<R[]> {
+    return this.client.fetch<R>(this.builder, signal);
+  }
+
+  fetchOne<R extends Row = Row>(signal?: AbortSignal): Promise<R | undefined> {
+    return this.client.fetchOne<R>(this.builder, signal);
+  }
+
+  toAst() {
+    return this.builder.toAst();
+  }
+}
+
 export class TypedSelectBuilder<Row extends Record<string, unknown>> {
   constructor(
     private readonly builder: SelectBuilder,
@@ -63,6 +197,16 @@ export class TypedSelectBuilder<Row extends Record<string, unknown>> {
     return this;
   }
 
+  andWhere(expr: Expr): this {
+    this.builder.andWhere(expr);
+    return this;
+  }
+
+  orWhere(expr: Expr): this {
+    this.builder.orWhere(expr);
+    return this;
+  }
+
   orderBy(col: keyof Row & string, direction?: OrderDirection): this {
     this.builder.orderBy(col, direction);
     return this;
@@ -80,6 +224,10 @@ export class TypedSelectBuilder<Row extends Record<string, unknown>> {
 
   fetch(signal?: AbortSignal): Promise<Row[]> {
     return this.client.fetch<Row>(this.builder, signal);
+  }
+
+  fetchOne(signal?: AbortSignal): Promise<Row | undefined> {
+    return this.client.fetchOne<Row>(this.builder, signal);
   }
 
   count(): Promise<number> {
@@ -110,16 +258,16 @@ export class TypedClient<Schema extends Record<string, Record<string, unknown>>>
     return new TypedSelectBuilder<Schema[T]>(this.raw.selectFrom(table), this.raw);
   }
 
-  insertInto<T extends keyof Schema & string>(table: T): InsertBuilder {
-    return this.raw.insertInto(table);
+  insertInto<T extends keyof Schema & string>(table: T): TypedInsertBuilder<Schema[T]> {
+    return new TypedInsertBuilder<Schema[T]>(this.raw.insertInto(table), this.raw);
   }
 
-  updateTable<T extends keyof Schema & string>(table: T): UpdateBuilder {
-    return this.raw.updateTable(table);
+  updateTable<T extends keyof Schema & string>(table: T): TypedUpdateBuilder<Schema[T]> {
+    return new TypedUpdateBuilder<Schema[T]>(this.raw.updateTable(table), this.raw);
   }
 
-  deleteFrom<T extends keyof Schema & string>(table: T): DeleteBuilder {
-    return this.raw.deleteFrom(table);
+  deleteFrom<T extends keyof Schema & string>(table: T): TypedDeleteBuilder<Schema[T]> {
+    return new TypedDeleteBuilder<Schema[T]>(this.raw.deleteFrom(table), this.raw);
   }
 
   fetch<T extends Row = Row>(
@@ -127,6 +275,13 @@ export class TypedClient<Schema extends Record<string, Record<string, unknown>>>
     signal?: AbortSignal,
   ): Promise<T[]> {
     return this.raw.fetch<T>(builder, signal);
+  }
+
+  fetchOne<T extends Row = Row>(
+    builder: SelectBuilder | InsertBuilder | UpdateBuilder | DeleteBuilder,
+    signal?: AbortSignal,
+  ): Promise<T | undefined> {
+    return this.raw.fetchOne<T>(builder, signal);
   }
 
   execute(
@@ -154,6 +309,10 @@ export class TypedClient<Schema extends Record<string, Record<string, unknown>>>
       stringsOrSql,
       ...rest,
     );
+  }
+
+  listTables(): Promise<string[]> {
+    return this.raw.listTables();
   }
 
   healthCheck(): Promise<HealthStatus> {

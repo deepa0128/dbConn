@@ -96,6 +96,10 @@ function exprToMongo(expr: Expr): MongoFilter {
         'rawExpr() is not supported on MongoDB. ' +
         'Use db.aggregate(collection, pipeline) to pass raw MongoDB query stages.',
       );
+    case 'not': {
+      const inner = exprToMongo(expr.expr);
+      return { $nor: [inner] };
+    }
     case 'inSubquery':
     case 'notInSubquery':
       throw new DbError(

@@ -1,6 +1,11 @@
 import pg from 'pg';
 import type { PostgresConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
+
+function makeRetryShouldRetry(config: PostgresConfig): ((err: unknown) => boolean) | undefined {
+  if (!config.retryTransientTimeouts) return undefined;
+  return (err) => err instanceof ConnectionError || err instanceof QueryTimeoutError;
+}
 import type { DriverRow, HealthStatus, PoolMetrics, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
 import { withRetry } from './retry.js';
@@ -55,6 +60,8 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
   const maxRetries = config.maxRetries ?? 0;
   const retryDelayMs = config.retryDelayMs ?? 100;
 
+  const shouldRetry = makeRetryShouldRetry(config);
+
   async function run<T extends DriverRow>(
     sql: string,
     params: unknown[],
@@ -69,7 +76,7 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
         return normalizeError(err);
       }
-    }, maxRetries, retryDelayMs);
+    }, maxRetries, retryDelayMs, shouldRetry);
   }
 
   let savepointCounter = 0;
@@ -116,6 +123,14 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
         }
       },
 
+      async listTables(): Promise<string[]> {
+        const r = await client.query<{ table_name: string }>(
+          `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`,
+          [],
+        );
+        return r.rows.map((row) => row.table_name);
+      },
+
       healthCheck: async () => ({ healthy: true, latencyMs: 0 }),
       poolMetrics: () => null,
       close: () => Promise.resolve(),
@@ -149,6 +164,14 @@ export function createPostgresDriver(config: PostgresConfig): SqlDriver {
       } finally {
         client.release();
       }
+    },
+
+    async listTables(): Promise<string[]> {
+      const { rows } = await run<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`,
+        [],
+      );
+      return rows.map((r) => r.table_name);
     },
 
     poolMetrics(): PoolMetrics {

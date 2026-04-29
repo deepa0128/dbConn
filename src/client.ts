@@ -77,6 +77,14 @@ export class DbClient {
    * Works on all dialects. For MongoDB, unsupported features (JOINs, CTEs, subqueries,
    * aggregates, DISTINCT) throw a descriptive DbError with the recommended alternative.
    */
+  async fetchOne<T extends Row = Row>(
+    builder: SelectBuilder | InsertBuilder | UpdateBuilder | DeleteBuilder,
+    signal?: AbortSignal,
+  ): Promise<T | undefined> {
+    const rows = await this.fetch<T>(builder, signal);
+    return rows[0];
+  }
+
   async fetch<T extends Row = Row>(
     builder: SelectBuilder | InsertBuilder | UpdateBuilder | DeleteBuilder,
     signal?: AbortSignal,
@@ -91,20 +99,25 @@ export class DbClient {
   }
 
   /**
-   * Stream a SELECT in batches using LIMIT/OFFSET pagination.
-   * Yields rows one at a time without loading the full result into memory.
+   * Stream a SELECT without loading the full result into memory.
+   *
+   * On SQL dialects: fetches in batches using LIMIT/OFFSET pagination.
    * Respects any LIMIT set on the builder as an overall cap.
    *
-   * SQL only — not supported on MongoDB. For MongoDB, use db.aggregate() with
-   * a $skip / $limit pipeline or process results from db.fetch() directly.
+   * On MongoDB: uses the native cursor with the given batchSize; more efficient
+   * than the SQL LIMIT/OFFSET approach since the cursor holds server-side state.
    */
   async *stream<T extends Row = Row>(
     builder: SelectBuilder,
     batchSize = 100,
   ): AsyncIterable<T> {
-    const sqlDriver = this.requireSql(
-      'db.stream() — use db.aggregate(collection, [{ $skip: N }, { $limit: N }]) for MongoDB cursor-based streaming',
-    );
+    if (this.driver.dialect === 'mongodb') {
+      const ast = builder.toAst();
+      yield* this.mongoDriver.stream<T>(ast, batchSize);
+      return;
+    }
+
+    const sqlDriver = this.driver as SqlDriver;
     const ast = builder.toAst();
     const cap = ast.limit;
     let offset = ast.offset ?? 0;
@@ -178,19 +191,46 @@ export class DbClient {
   /**
    * Fetch one page using keyset (cursor) pagination.
    * Stable under concurrent writes; more efficient than LIMIT/OFFSET on large tables.
-   *
-   * SQL only — not supported on MongoDB. For MongoDB, use db.aggregate() with
-   * $match and $sort to implement cursor-based pagination, or use skip/limit via db.fetch().
+   * Works on all dialects. MongoDB uses a native cursor filter rather than SQL.
    */
   async paginate<T extends Row = Row>(
     builder: SelectBuilder,
     options: CursorPageOptions,
   ): Promise<PageResult<T>> {
-    this.requireSql(
-      'db.paginate() — for MongoDB, implement pagination using db.fetch() with .limit(n).offset(n) ' +
-      'or db.aggregate() with $match / $sort for keyset pagination',
-    );
     return paginateImpl<T>(this, builder, options);
+  }
+
+  /**
+   * Insert a large array of rows in chunks to avoid parameter-count limits.
+   * Each chunk is a single multi-row INSERT statement.
+   * Works on all dialects.
+   */
+  async batchInsert(
+    table: string,
+    rows: Record<string, unknown>[],
+    chunkSize = 500,
+  ): Promise<{ affectedRows: number }> {
+    if (rows.length === 0) return { affectedRows: 0 };
+    const columns = Object.keys(rows[0]!);
+    let total = 0;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const builder = this.insertInto(table).columns(...columns);
+      for (const row of chunk) builder.values(row);
+      const result = await this.execute(builder);
+      total += result.affectedRows;
+    }
+    return { affectedRows: total };
+  }
+
+  /**
+   * Return the names of all tables (SQL) or collections (MongoDB) in the current database.
+   * On Postgres: queries information_schema.tables for the public schema.
+   * On MySQL: runs SHOW TABLES.
+   * On MongoDB: runs listCollections.
+   */
+  async listTables(): Promise<string[]> {
+    return this.driver.listTables();
   }
 
   /**
@@ -268,7 +308,11 @@ export class DbClient {
    *     { $sort: { total: -1 } },
    *   ]);
    */
-  async aggregate<T extends Row = Row>(collection: string, pipeline: unknown[]): Promise<T[]> {
+  async aggregate<T extends Row = Row>(
+    collection: string,
+    pipeline: unknown[],
+    signal?: AbortSignal,
+  ): Promise<T[]> {
     if (this.driver.dialect !== 'mongodb') {
       throw new DbError(
         `db.aggregate() is only available for MongoDB connections. ` +
@@ -276,7 +320,7 @@ export class DbClient {
         `Use db.sql() or the query builder for SQL operations.`,
       );
     }
-    return this.mongoDriver.aggregate<T>(collection, pipeline);
+    return withSignal(this.mongoDriver.aggregate<T>(collection, pipeline), signal);
   }
 
   /** Ping the database and return latency + health status. Works on all dialects. */
@@ -296,15 +340,14 @@ export class DbClient {
    * Run EXPLAIN on a SELECT query and return the raw plan rows.
    * Postgres: each row has a `"QUERY PLAN"` column.
    * MySQL: columns are `id`, `select_type`, `table`, `type`, `key`, etc.
-   *
-   * SQL only — not supported on MongoDB. Use the MongoDB Compass query analyzer
-   * or db.aggregate(collection, pipeline) with an explain option for query analysis.
+   * MongoDB: returns a single row containing the executionStats explain document.
    */
   async explain(builder: SelectBuilder): Promise<Row[]> {
-    const sqlDriver = this.requireSql(
-      'db.explain() — use the MongoDB Compass query analyzer or call collection.find(filter).explain() via the native MongoDB driver',
-    );
     const ast = builder.toAst();
+    if (this.driver.dialect === 'mongodb') {
+      return this.mongoDriver.explain(ast) as Promise<Row[]>;
+    }
+    const sqlDriver = this.driver as SqlDriver;
     const { sql, params } = compileQuery(ast, sqlDriver.dialect);
     return sqlDriver.query<Row>(`EXPLAIN ${sql}`, params);
   }
@@ -322,4 +365,22 @@ export class DbClient {
 export function createClient(config: DbConnConfig | string): DbClient {
   const resolved = typeof config === 'string' ? parseConnectionUrl(config) : config;
   return new DbClient(createDriver(resolved));
+}
+
+/**
+ * Create a client from an environment variable containing a connection URL.
+ * Throws a descriptive error immediately if the variable is missing or empty,
+ * rather than failing on the first query.
+ *
+ * @param envVar - variable name to read (default: `DATABASE_URL`)
+ */
+export function createClientFromEnv(envVar = 'DATABASE_URL'): DbClient {
+  const url = process.env[envVar];
+  if (!url) {
+    throw new Error(
+      `Environment variable ${JSON.stringify(envVar)} is not set. ` +
+      'Provide a connection URL (postgres://, mysql://, mongodb://, etc.).',
+    );
+  }
+  return createClient(url);
 }

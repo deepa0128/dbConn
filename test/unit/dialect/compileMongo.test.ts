@@ -76,4 +76,18 @@ describe('compileMongoQuery', () => {
     };
     expect(() => compileMongoQuery(ast)).toThrow(DbError);
   });
+
+  it('compiles not expression using $nor', () => {
+    const ast: SelectAst = {
+      type: 'select',
+      from: 'users',
+      columns: '*',
+      where: { type: 'not', expr: { type: 'eq', column: 'active', value: false } },
+    };
+    const result = compileMongoQuery(ast);
+    expect(result).toMatchObject({
+      kind: 'select',
+      filter: { $nor: [{ active: false }] },
+    });
+  });
 });

@@ -1,8 +1,7 @@
 import type { DbClient, Row } from './client.js';
 import { SelectBuilder } from './builder/select.js';
 import { compileQuery } from './dialect/compileQuery.js';
-import type { Expr, OrderDirection } from './ast.js';
-import { DbError } from './errors.js';
+import type { Expr, OrderDirection, SelectAst } from './ast.js';
 
 export type PageResult<T extends Row> = {
   rows: T[];
@@ -53,16 +52,13 @@ export async function paginate<T extends Row = Row>(
     limit: limit + 1, // fetch one extra to detect hasMore
   };
 
+  let rows: T[];
   if (client.dialect === 'mongodb') {
-    throw new DbError(
-      'db.paginate() is not supported on MongoDB. ' +
-      'For MongoDB, implement pagination using db.fetch() with .limit(n).offset(n) for simple cases, ' +
-      'or db.aggregate(collection, [{ $match: { _id: { $gt: lastId } } }, { $sort: ... }, { $limit: n }]) ' +
-      'for efficient keyset pagination.',
-    );
+    rows = await client.fetch<T>(astToBuilder(pageAst));
+  } else {
+    const { sql, params } = compileQuery(pageAst, client.dialect as 'postgres' | 'mysql');
+    rows = await client.sql<T>(sql, params);
   }
-  const { sql, params } = compileQuery(pageAst, client.dialect as 'postgres' | 'mysql');
-  const rows = await client.sql<T>(sql, params);
 
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
@@ -81,4 +77,22 @@ function encodeCursor(value: unknown): string {
 
 function decodeCursor(cursor: string): string {
   return Buffer.from(cursor, 'base64').toString('utf8');
+}
+
+function astToBuilder(ast: SelectAst): SelectBuilder {
+  const b = new SelectBuilder().from(ast.from, ast.fromAlias);
+  if (ast.columns !== '*') b.selectColumns(...ast.columns);
+  if (ast.distinct) b.distinct();
+  if (ast.joins?.length) {
+    for (const j of ast.joins) b.join(j.table, j.on, j.type, j.alias);
+  }
+  if (ast.where) b.where(ast.where);
+  if (ast.groupBy?.length) b.groupBy(...ast.groupBy);
+  if (ast.having) b.having(ast.having);
+  if (ast.orderBy?.length) {
+    for (const o of ast.orderBy) b.orderBy(o.column, o.direction);
+  }
+  if (ast.limit !== undefined) b.limit(ast.limit);
+  if (ast.offset !== undefined) b.offset(ast.offset);
+  return b;
 }

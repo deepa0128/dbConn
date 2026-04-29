@@ -112,6 +112,9 @@ function compileExprInner(
       const sub = compileSub(expr.query, params);
       return `NOT EXISTS (${sub})`;
     }
+    case 'not': {
+      return `NOT (${compileExprInner(expr.expr, style, params, quoteId, compileSub)})`;
+    }
     case 'and': {
       if (expr.items.length === 0) return 'TRUE';
       return expr.items.map((e) => `(${compileExprInner(e, style, params, quoteId, compileSub)})`).join(' AND ');

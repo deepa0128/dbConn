@@ -31,6 +31,8 @@ export type PostgresConfig = {
   maxRetries?: number;
   /** Initial delay in ms before first retry; doubles each attempt (default: 100). */
   retryDelayMs?: number;
+  /** Also retry on QueryTimeoutError in addition to ConnectionError (default: false). */
+  retryTransientTimeouts?: boolean;
 };
 
 export type MysqlConfig = {
@@ -53,6 +55,8 @@ export type MysqlConfig = {
   maxRetries?: number;
   /** Initial delay in ms before first retry; doubles each attempt (default: 100). */
   retryDelayMs?: number;
+  /** Also retry on QueryTimeoutError in addition to ConnectionError (default: false). */
+  retryTransientTimeouts?: boolean;
 };
 
 export type MongoDbConfig = {
@@ -74,6 +78,8 @@ export type MongoDbConfig = {
   maxRetries?: number;
   /** Initial delay in ms before first retry; doubles each attempt (default: 100). */
   retryDelayMs?: number;
+  /** Also retry on QueryTimeoutError in addition to ConnectionError (default: false). */
+  retryTransientTimeouts?: boolean;
 };
 
 export type DbConnConfig = PostgresConfig | MysqlConfig | MongoDbConfig;

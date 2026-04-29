@@ -133,4 +133,38 @@ describe('SelectBuilder', () => {
       offset: 10,
     });
   });
+
+  it('andWhere ANDs into an empty where clause', () => {
+    const expr = eq('active', true);
+    const ast = new SelectBuilder().from('users').andWhere(expr).toAst();
+    expect(ast.where).toEqual(expr);
+  });
+
+  it('andWhere ANDs into an existing where clause', () => {
+    const first = eq('active', true);
+    const second = eq('role', 'admin');
+    const ast = new SelectBuilder().from('users').where(first).andWhere(second).toAst();
+    expect(ast.where).toEqual({ type: 'and', items: [first, second] });
+  });
+
+  it('orWhere ORs into an empty where clause', () => {
+    const expr = eq('role', 'admin');
+    const ast = new SelectBuilder().from('users').orWhere(expr).toAst();
+    expect(ast.where).toEqual(expr);
+  });
+
+  it('orWhere ORs into an existing where clause', () => {
+    const first = eq('role', 'admin');
+    const second = eq('role', 'mod');
+    const ast = new SelectBuilder().from('users').where(first).orWhere(second).toAst();
+    expect(ast.where).toEqual({ type: 'or', items: [first, second] });
+  });
+
+  it('chains andWhere multiple times', () => {
+    const a = eq('a', 1);
+    const b = eq('b', 2);
+    const c = eq('c', 3);
+    const ast = new SelectBuilder().from('t').andWhere(a).andWhere(b).andWhere(c).toAst();
+    expect(ast.where).toEqual({ type: 'and', items: [{ type: 'and', items: [a, b] }, c] });
+  });
 });

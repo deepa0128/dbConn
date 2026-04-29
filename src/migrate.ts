@@ -1,5 +1,6 @@
 import { eq } from './builder/expr.js';
 import type { DbClient, Row } from './client.js';
+import { DbError } from './errors.js';
 
 export type Migration = {
   /** Unique name, used as the primary key in the migrations table / collection. */
@@ -100,6 +101,27 @@ async function removeRecord(client: DbClient, name: string): Promise<void> {
     : sqlRemoveRecord(client, name);
 }
 
+export type MigrationStatus = {
+  applied: string[];
+  pending: string[];
+};
+
+/**
+ * Return the status of all migrations without running any.
+ * `applied` preserves the order migrations were applied; `pending` preserves definition order.
+ */
+export async function migrateStatus(
+  client: DbClient,
+  migrations: Migration[],
+): Promise<MigrationStatus> {
+  await ensureTable(client);
+  const appliedSet = await appliedNames(client);
+  return {
+    applied: migrations.filter((m) => appliedSet.has(m.name)).map((m) => m.name),
+    pending: migrations.filter((m) => !appliedSet.has(m.name)).map((m) => m.name),
+  };
+}
+
 /**
  * Apply all pending migrations in order.
  *
@@ -112,12 +134,37 @@ async function removeRecord(client: DbClient, name: string): Promise<void> {
  * transactions require a replica set. If you need transactional migrations, wrap
  * the body of your `up` function in `client.transaction(async (tx) => { ... })`.
  *
- * Returns names of newly applied migrations.
+ * When `options.dryRun` is true (SQL only): each migration runs inside a transaction
+ * that is always rolled back, validating the SQL without persisting any changes.
+ *
+ * Returns names of newly applied (or would-be applied) migrations.
  */
-export async function migrateUp(client: DbClient, migrations: Migration[]): Promise<string[]> {
+export async function migrateUp(
+  client: DbClient,
+  migrations: Migration[],
+  options?: { dryRun?: boolean },
+): Promise<string[]> {
   await ensureTable(client);
   const applied = await appliedNames(client);
   const pending = migrations.filter((m) => !applied.has(m.name));
+
+  if (options?.dryRun) {
+    if (client.dialect === 'mongodb') {
+      throw new DbError(
+        'Dry-run is not supported on MongoDB without a replica set. ' +
+        'Use migrateStatus() to preview pending migrations instead.',
+      );
+    }
+    const sentinel = Symbol('dryrun');
+    for (const migration of pending) {
+      await client.transaction(async (tx) => {
+        await migration.up(tx);
+        throw sentinel;
+      }).catch((e) => { if (e !== sentinel) throw e; });
+    }
+    return pending.map((m) => m.name);
+  }
+
   const ran: string[] = [];
 
   for (const migration of pending) {

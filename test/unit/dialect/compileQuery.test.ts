@@ -60,6 +60,21 @@ describe('compileQuery › SELECT', () => {
     expect(params).toEqual([1, 2]);
   });
 
+  it('not expression wraps inner expr', () => {
+    const ast: SelectAst = {
+      ...base,
+      where: { type: 'not', expr: { type: 'eq', column: 'active', value: true } },
+    };
+    expect(compileQuery(ast, 'postgres')).toEqual({
+      sql: 'SELECT * FROM "users" WHERE NOT ("active" = $1)',
+      params: [true],
+    });
+    expect(compileQuery(ast, 'mysql')).toEqual({
+      sql: 'SELECT * FROM `users` WHERE NOT (`active` = ?)',
+      params: [true],
+    });
+  });
+
   it('orderBy single column', () => {
     const ast: SelectAst = {
       ...base,

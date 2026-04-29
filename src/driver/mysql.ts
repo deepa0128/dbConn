@@ -2,6 +2,11 @@ import mysql from 'mysql2/promise';
 import type { ResultSetHeader } from 'mysql2/promise';
 import type { MysqlConfig } from '../config.js';
 import { ConnectionError, ConstraintError, DbError, QueryTimeoutError } from '../errors.js';
+
+function makeRetryShouldRetry(config: MysqlConfig): ((err: unknown) => boolean) | undefined {
+  if (!config.retryTransientTimeouts) return undefined;
+  return (err) => err instanceof ConnectionError || err instanceof QueryTimeoutError;
+}
 import type { DriverRow, HealthStatus, SqlDriver } from './types.js';
 import { notifyQuery } from './notify.js';
 import { withRetry } from './retry.js';
@@ -69,6 +74,7 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
 
   const maxRetries = config.maxRetries ?? 0;
   const retryDelayMs = config.retryDelayMs ?? 100;
+  const shouldRetry = makeRetryShouldRetry(config);
 
   // mysql2 accepts { sql, values, timeout } to trigger a server-side KILL QUERY
   // after `timeout` ms. When no timeout is set, use the plain (sql, values) form.
@@ -85,7 +91,7 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
         notifyQuery(config.onQuery, { sql, params, durationMs: Date.now() - start, error: err });
         throw err;
       }
-    }, maxRetries, retryDelayMs);
+    }, maxRetries, retryDelayMs, shouldRetry);
   }
 
   async function runConn(conn: mysql.PoolConnection, sql: string, params: unknown[]) {
@@ -140,6 +146,11 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
         }
       },
 
+      async listTables(): Promise<string[]> {
+        const [rows] = await conn.execute('SHOW TABLES');
+        return (rows as Record<string, string>[]).map((r) => Object.values(r)[0]!);
+      },
+
       healthCheck: async () => ({ healthy: true, latencyMs: 0 }),
       poolMetrics: () => null,
       close: () => Promise.resolve(),
@@ -181,6 +192,11 @@ export function createMysqlDriver(config: MysqlConfig): SqlDriver {
       } finally {
         conn.release();
       }
+    },
+
+    async listTables(): Promise<string[]> {
+      const [rows] = await pool.execute('SHOW TABLES');
+      return (rows as Record<string, string>[]).map((r) => Object.values(r)[0]!);
     },
 
     poolMetrics(): null {
