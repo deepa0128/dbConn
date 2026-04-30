@@ -2,7 +2,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createClient, type DbClient } from '../../src/client.js';
 import { and, eq, gt } from '../../src/builder/expr.js';
-import { ConstraintError, DbError } from '../../src/errors.js';
+import { ConstraintError } from '../../src/errors.js';
 import {
   CREATE_TABLE_PG,
   DROP_TABLE,
@@ -192,12 +192,21 @@ describe.skipIf(!url)('Postgres integration', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('throws DbError for nested transactions', async () => {
-    await expect(
-      db.transaction(async (tx) => {
-        await tx.transaction(async () => {});
-      }),
-    ).rejects.toBeInstanceOf(DbError);
+  it('supports nested transactions via SAVEPOINTs', async () => {
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        tx.insertInto(TEST_TABLE).columns('email', 'name', 'active').values({ email: 'outer@example.com', name: 'Outer', active: true }),
+      );
+      await tx.transaction(async (inner) => {
+        await inner.execute(
+          inner.insertInto(TEST_TABLE).columns('email', 'name', 'active').values({ email: 'inner@example.com', name: 'Inner', active: true }),
+        );
+      });
+    });
+    const rows = await db.fetch(db.selectFrom(TEST_TABLE).where(eq('email', 'outer@example.com')));
+    expect(rows).toHaveLength(1);
+    const innerRows = await db.fetch(db.selectFrom(TEST_TABLE).where(eq('email', 'inner@example.com')));
+    expect(innerRows).toHaveLength(1);
   });
 
   // ── ERROR TYPES ──────────────────────────────────────────────────────────
